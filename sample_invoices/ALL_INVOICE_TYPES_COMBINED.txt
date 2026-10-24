@@ -1,0 +1,174 @@
+================================================================================
+STANDARD VALID INVOICE
+================================================================================
+Invoice Number: INV-2024-1001
+Invoice Date:   2024-09-01
+Due Date:       2024-09-30
+PO Number:      PO-9001
+
+VENDOR INFORMATION:
+Vendor:         Apex Cloud Systems LLC
+Address:        500 Silicon Way, Tech Park, CA
+GST/Tax ID:     27AAAPL1234C1ZV
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global Enterprise
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+Cloud Hosting Platform Subscription (Monthly)    1   $   1000.00   $   1000.00
+Advanced DDoS Protection & WAF Gateway           1   $    200.00   $    200.00
+--------------------------------------------------------------------------------
+Subtotal:       $1200.00
+Tax Amount:     $120.00
+Discount:       $20.00
+Total Amount:   $1300.00
+================================================================================
+Audit Notes: Standard approved vendor contract. Math verified: $1200 + $120 - $20 = $1300.
+================================================================================
+
+
+================================================================================
+
+================================================================================
+EXACT DUPLICATE INVOICE (Test Duplicate Engine)
+================================================================================
+Invoice Number: INV-2024-1001
+Invoice Date:   2024-09-01
+Due Date:       2024-09-30
+PO Number:      PO-9001
+
+VENDOR INFORMATION:
+Vendor:         Apex Cloud Systems LLC
+Address:        500 Silicon Way, Tech Park, CA
+GST/Tax ID:     27AAAPL1234C1ZV
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global Enterprise
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+Cloud Hosting Platform Subscription (Monthly)    1   $   1000.00   $   1000.00
+Advanced DDoS Protection & WAF Gateway           1   $    200.00   $    200.00
+--------------------------------------------------------------------------------
+Subtotal:       $1200.00
+Tax Amount:     $120.00
+Discount:       $20.00
+Total Amount:   $1300.00
+================================================================================
+Audit Notes: CRITICAL: Exact duplicate of Invoice #INV-2024-1001. RapidFuzz should score 95-100% Highly Likely Duplicate.
+================================================================================
+
+
+================================================================================
+
+================================================================================
+FUZZY NEAR-DUPLICATE INVOICE
+================================================================================
+Invoice Number: INV-2024-1001-A
+Invoice Date:   2024-09-01
+Due Date:       2024-09-30
+PO Number:      PO-9001
+
+VENDOR INFORMATION:
+Vendor:         Apex Cloud Systems International
+Address:        500 Silicon Way, Tech Park, CA
+GST/Tax ID:     27AAAPL1234C1ZV
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+Cloud Infrastructure & Network Licensing         1   $   1200.00   $   1200.00
+--------------------------------------------------------------------------------
+Subtotal:       $1200.00
+Tax Amount:     $100.00
+Discount:       $0.00
+Total Amount:   $1300.00
+================================================================================
+Audit Notes: Near-duplicate test. RapidFuzz token matching will detect high similarity (~80-88% Possible Duplicate).
+================================================================================
+
+
+================================================================================
+
+================================================================================
+HIGH-RISK FRAUD ANOMALY INVOICE
+================================================================================
+Invoice Number: INV-ANOMALY-999
+Invoice Date:   2030-12-15
+Due Date:       2030-12-31
+PO Number:      PO-UNAPPROVED
+
+VENDOR INFORMATION:
+Vendor:         Apex Cloud Systems LLC
+Address:        Unknown Offshore Post Office Box 88
+GST/Tax ID:     INVALID_GST_777
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global Enterprise
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+Enterprise High Frequency GPU Cluster Reservation    1   $  60000.00   $  60000.00
+Expedited Offshore Server Deployment Fee         1   $   5000.00   $   5000.00
+--------------------------------------------------------------------------------
+Subtotal:       $65000.00
+Tax Amount:     $5000.00
+Discount:       $0.00
+Total Amount:   $95000.00
+================================================================================
+Audit Notes: ANOMALIES: Abnormal spend spike ($95,000), calculation mismatch ($70,000 vs $95,000), future date (2030).
+================================================================================
+
+
+================================================================================
+
+================================================================================
+ARITHMETIC ERROR INVOICE
+================================================================================
+Invoice Number: INV-MATH-ERROR-505
+Invoice Date:   2024-09-02
+Due Date:       2024-09-25
+PO Number:      PO-8822
+
+VENDOR INFORMATION:
+Vendor:         Global Hardware Supplies Co
+Address:        88 Industrial Way, Austin, TX
+GST/Tax ID:     33BBBPK9876D1Z1
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global Enterprise
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+High Performance Rack Server Model X             2   $   2000.00   $   4000.00
+Network Switch 48-Port Gigabit                   1   $    500.00   $    500.00
+--------------------------------------------------------------------------------
+Subtotal:       $4500.00
+Tax Amount:     $450.00
+Discount:       $50.00
+Total Amount:   $6200.00
+================================================================================
+Audit Notes: Math mismatch test: Subtotal ($4,500) + Tax ($450) - Discount ($50) = $4,900 != Billed ($6,200).
+================================================================================
+
+
+================================================================================
+

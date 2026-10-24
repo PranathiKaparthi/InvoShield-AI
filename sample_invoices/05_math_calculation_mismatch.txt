@@ -1,0 +1,31 @@
+================================================================================
+ARITHMETIC ERROR INVOICE
+================================================================================
+Invoice Number: INV-MATH-ERROR-505
+Invoice Date:   2024-09-02
+Due Date:       2024-09-25
+PO Number:      PO-8822
+
+VENDOR INFORMATION:
+Vendor:         Global Hardware Supplies Co
+Address:        88 Industrial Way, Austin, TX
+GST/Tax ID:     33BBBPK9876D1Z1
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global Enterprise
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+High Performance Rack Server Model X             2   $   2000.00   $   4000.00
+Network Switch 48-Port Gigabit                   1   $    500.00   $    500.00
+--------------------------------------------------------------------------------
+Subtotal:       $4500.00
+Tax Amount:     $450.00
+Discount:       $50.00
+Total Amount:   $6200.00
+================================================================================
+Audit Notes: Math mismatch test: Subtotal ($4,500) + Tax ($450) - Discount ($50) = $4,900 != Billed ($6,200).
+================================================================================

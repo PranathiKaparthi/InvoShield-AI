@@ -1,0 +1,20 @@
+INVOICE
+Invoice Number: INV-2024-9988
+Date: 2024-09-02
+Due Date: 2024-10-02
+Vendor: CloudShield Cyber Solutions Inc
+Vendor Address: 100 Tech Enterprise Blvd, Suite 400
+Customer: Apex FinTech Global
+Customer Address: 742 Evergreen Terrace, Sector 7
+GST Number: 29ABCDE1234F1Z5
+PO Number: PO-2024-7712
+
+Description                         Qty    Price      Total
+Enterprise Security Sentinel Core    1     3000.00    3000.00
+Threat Intelligence Feed (1 Year)   1     1500.00    1500.00
+Cloud Backup Vault Storage          1      500.00     500.00
+
+Subtotal: $5000.00
+Tax Amount: $500.00
+Discount: $100.00
+Total Amount: $5400.00

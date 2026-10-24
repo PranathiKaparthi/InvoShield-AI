@@ -1,0 +1,31 @@
+================================================================================
+STANDARD VALID INVOICE
+================================================================================
+Invoice Number: INV-2024-1001
+Invoice Date:   2024-09-01
+Due Date:       2024-09-30
+PO Number:      PO-9001
+
+VENDOR INFORMATION:
+Vendor:         Apex Cloud Systems LLC
+Address:        500 Silicon Way, Tech Park, CA
+GST/Tax ID:     27AAAPL1234C1ZV
+
+CUSTOMER INFORMATION:
+Customer:       InvoShield Global Enterprise
+Address:        742 Evergreen Terrace, Sector 7
+
+LINE ITEMS:
+--------------------------------------------------------------------------------
+Description                                    Qty      Unit Price        Total
+--------------------------------------------------------------------------------
+Cloud Hosting Platform Subscription (Monthly)    1   $   1000.00   $   1000.00
+Advanced DDoS Protection & WAF Gateway           1   $    200.00   $    200.00
+--------------------------------------------------------------------------------
+Subtotal:       $1200.00
+Tax Amount:     $120.00
+Discount:       $20.00
+Total Amount:   $1300.00
+================================================================================
+Audit Notes: Standard approved vendor contract. Math verified: $1200 + $120 - $20 = $1300.
+================================================================================
