@@ -6,6 +6,7 @@ export interface User {
   email: string;
   role: UserRole;
   organization: string;
+  must_change_password?: boolean;
   created_at?: string;
 }
 
@@ -112,4 +113,81 @@ export interface DashboardAnalytics {
   vendor_distribution: { vendor: string; count: number; total_amount: number }[];
   monthly_totals: { month: string; count: number; amount: number }[];
   recent_activities: AuditLog[];
+}
+
+// ---------------- InvoShield Assistant ----------------
+export interface AgentContact {
+  id: number;
+  display_name: string;
+  kind: 'vendor' | 'staff';
+  vendor_name?: string | null;
+  user_id?: number | null;
+  user_email?: string | null;
+  user_role?: string | null;
+  phone_e164?: string | null;
+  email?: string | null;
+  verified: boolean;
+  preferred_language: string;
+  notes?: string | null;
+  created_at?: string;
+}
+
+export interface AgentConversation {
+  id: number;
+  channel: string;
+  sender_address: string;
+  contact: AgentContact | null;
+  last_message_at?: string;
+  last_inbound_at?: string;
+  last_message: string;
+  last_direction: 'inbound' | 'outbound' | null;
+}
+
+export interface AgentToolCall {
+  name: string;
+  input: Record<string, unknown>;
+  outcome: string;
+}
+
+export interface AgentMessage {
+  id: number;
+  direction: 'inbound' | 'outbound';
+  content: string;
+  status: string;
+  media: { filename: string; mime_type: string }[];
+  tool_calls: AgentToolCall[];
+  created_at: string;
+}
+
+export interface AgentApproval {
+  id: number;
+  type: 'invoice_action' | 'outbound_message' | 'document_copy' | 'held_reply' | 'handoff';
+  status: string;
+  summary: string;
+  payload: Record<string, any>;
+  conversation_id?: number | null;
+  requested_by: AgentContact | null;
+  decided_at?: string | null;
+  created_at: string;
+}
+
+export interface AgentSettings {
+  organization: string;
+  business_name: string;
+  default_language: string;
+  auto_reply: boolean;
+  notify_vendors: boolean;
+  channel_mode: 'mock' | 'live';
+  llm: { provider: string; model?: string | null };
+  whatsapp: { configured: boolean; webhook_secret_set: boolean; verify_token_set: boolean; webhook_path: string };
+  email: { configured: boolean; webhook_secret_set: boolean; imap_configured: boolean; webhook_path: string };
+  templates: Record<string, string>;
+}
+
+export interface SimulateResult {
+  conversation_id: number | null;
+  status: string;
+  replies: string[];
+  tool_calls: AgentToolCall[];
+  outbox: { to: string; text: string; template?: string | null; buttons: [string, string][] }[];
 }

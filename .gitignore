@@ -59,3 +59,10 @@ lerna-debug.log*
 .DS_Store
 Thumbs.db
 ehthumbs.db
+
+# Runtime data: never commit databases or uploaded invoices
+*.db
+*.db-journal
+*.sqlite3
+storage_data/
+backend/storage_data/

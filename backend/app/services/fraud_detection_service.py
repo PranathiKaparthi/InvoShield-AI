@@ -26,6 +26,7 @@ class FraudDetectionService:
         inv_number = (invoice_data.get("invoice_number") or "").strip()
         inv_date_str = (invoice_data.get("invoice_date") or "").strip()
         gst_number = (invoice_data.get("gst_number") or "").strip()
+        sym = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}.get((invoice_data.get("currency") or "USD").upper(), "$")
 
         # Rule 1: Duplicate Invoice Risk
         if duplicate_score >= 90.0:
@@ -46,7 +47,7 @@ class FraudDetectionService:
             for prior in matching_number_invoices:
                 if abs(float(prior.total_amount or 0.0) - total_amount) > 1.0:
                     risk_score += 40
-                    reasons.append(f"Invoice Number Conflict: Invoice #{inv_number} already exists with a different total (${prior.total_amount:.2f} vs current ${total_amount:.2f}).")
+                    reasons.append(f"Invoice Number Conflict: Invoice #{inv_number} already exists with a different total ({sym}{prior.total_amount:.2f} vs current {sym}{total_amount:.2f}).")
                     break
 
         # Rule 3: Vendor History and Abnormal Amount Analysis
@@ -64,24 +65,24 @@ class FraudDetectionService:
                     avg_vendor_amount = sum(amounts) / len(amounts)
                     if total_amount > (avg_vendor_amount * 3.0) and total_amount > 1000.0:
                         risk_score += 35
-                        reasons.append(f"Abnormal Spend Spike: Current amount (${total_amount:,.2f}) is over 3x higher than vendor '{vendor_name}' average (${avg_vendor_amount:,.2f}).")
+                        reasons.append(f"Abnormal Spend Spike: Current amount ({sym}{total_amount:,.2f}) is over 3x higher than vendor '{vendor_name}' average ({sym}{avg_vendor_amount:,.2f}).")
                     elif total_amount > (avg_vendor_amount * 2.0):
                         risk_score += 15
-                        reasons.append(f"Elevated Spend: Amount (${total_amount:,.2f}) is significantly above vendor average (${avg_vendor_amount:,.2f}).")
+                        reasons.append(f"Elevated Spend: Amount ({sym}{total_amount:,.2f}) is significantly above vendor average ({sym}{avg_vendor_amount:,.2f}).")
 
         # Rule 4: Unusually High Absolute Amount
         if total_amount > 100000.0:
             risk_score += 30
-            reasons.append(f"High Value Threshold: Single invoice amount (${total_amount:,.2f}) exceeds $100,000 corporate review threshold.")
+            reasons.append(f"High Value Threshold: Single invoice amount ({sym}{total_amount:,.2f}) exceeds the 100,000 high-value review threshold.")
         elif total_amount > 25000.0:
             risk_score += 15
-            reasons.append(f"Substantial Value: Invoice amount (${total_amount:,.2f}) exceeds $25,000 standard review threshold.")
+            reasons.append(f"Substantial Value: Invoice amount ({sym}{total_amount:,.2f}) exceeds the 25,000 standard review threshold.")
 
         # Rule 5: Math Calculation / Tax Anomaly
         expected_total = round(subtotal + tax - discount, 2)
         if abs(expected_total - round(total_amount, 2)) > 0.10:
             risk_score += 25
-            reasons.append(f"Financial Inconsistency: Calculated total (${expected_total:,.2f}) does not match billed total (${total_amount:,.2f}).")
+            reasons.append(f"Financial Inconsistency: Calculated total ({sym}{expected_total:,.2f}) does not match billed total ({sym}{total_amount:,.2f}).")
 
         # Rule 6: Future Invoice Date
         if inv_date_str:

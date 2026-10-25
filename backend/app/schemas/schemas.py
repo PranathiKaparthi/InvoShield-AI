@@ -21,9 +21,14 @@ class UserResponse(BaseModel):
     email: str
     role: str
     organization: str
+    must_change_password: Optional[bool] = False
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=10)
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -126,6 +131,8 @@ class InvoiceResponse(InvoiceBase):
     sha256_checksum: Optional[str] = None
     organization: Optional[str] = None
     user_id: Optional[int] = None
+    payment_status: Optional[str] = "unpaid"
+    source_channel: Optional[str] = "web"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

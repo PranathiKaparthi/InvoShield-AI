@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from app.database.session import Base
 
@@ -15,6 +15,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), default="user", nullable=False)  # admin, reviewer, user
     organization = Column(String(255), default="General", nullable=False)
+    must_change_password = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=utc_now)
 
     invoices = relationship("Invoice", back_populates="user")
@@ -55,6 +56,9 @@ class Invoice(Base):
     duplicate_status = Column(String(50), default="No Significant Duplicate")
     sha256_checksum = Column(String(64), nullable=True)  # Tamper-proof cryptographic seal
     organization = Column(String(120), default="General", index=True)  # Multi-tenant tenant scoping
+    payment_status = Column(String(30), default="unpaid")  # unpaid, scheduled, paid
+    source_channel = Column(String(30), default="web")  # web, whatsapp, email, mock
+    source_contact_id = Column(Integer, ForeignKey("agent_contacts.id"), nullable=True)  # assistant contact who sent it
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=utc_now)

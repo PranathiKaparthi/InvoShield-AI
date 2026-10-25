@@ -1,5 +1,4 @@
 import json
-import hashlib
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from fastapi.responses import Response
@@ -20,6 +19,8 @@ from app.services.validation_service import validation_service
 from app.services.duplicate_detection_service import duplicate_detection_service
 from app.services.fraud_detection_service import fraud_detection_service
 from app.services.encryption_service import encryption_service
+from app.services.invoice_pipeline import process_invoice_upload
+from app.services import invoice_actions
 
 router = APIRouter(prefix="/api/invoices", tags=["Invoices"])
 
@@ -53,6 +54,8 @@ def format_invoice_response(invoice: Invoice) -> dict:
         "sha256_checksum": invoice.sha256_checksum,
         "organization": invoice.organization,
         "user_id": invoice.user_id,
+        "payment_status": getattr(invoice, "payment_status", None) or "unpaid",
+        "source_channel": getattr(invoice, "source_channel", None) or "web",
         "created_at": invoice.created_at,
         "updated_at": invoice.updated_at,
     }
@@ -122,134 +125,20 @@ async def upload_invoice(
     """
     Workflow Step 1-7:
     Upload file -> Cloud Storage -> OCR Extraction -> Validation -> Duplicate Check -> Fraud Risk Scoring -> Save
+    (implemented once in app/services/invoice_pipeline.py and shared with the InvoShield Assistant)
     """
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    # 1. Cryptographic File Integrity Checksum (Tamper-Proof SHA-256 Seal)
-    sha256_hash = hashlib.sha256(file_bytes).hexdigest()
-
-    # 2. Cloud storage upload (initial pending folder)
-    cloud_path = cloud_storage_service.upload_file(file_bytes, file.filename, folder="pending")
-
-    # 3. OCR Text Extraction & Confidence
-    extracted_text, ocr_confidence = ocr_service.extract_text_and_confidence(file_bytes, file.filename)
-
-    # 4. Intelligent Data Extraction
-    data = invoice_extraction_service.extract(extracted_text, base_confidence=ocr_confidence)
-
-    # 5. Data Validation Rules
-    validation_items, val_status = validation_service.validate(data)
-
-    # 6. RapidFuzz Duplicate Detection (Strictly scoped to current organization)
-    user_org = current_user.organization or "General"
-    dup_score, dup_verdict, matched_id, dup_breakdown = duplicate_detection_service.check_duplicate(
-        data, db, organization=user_org
-    )
-
-    # 7. Fraud / Anomaly Risk Scoring Engine (Scoped to current organization)
-    risk_score, risk_level, risk_reasons = fraud_detection_service.analyze(
-        data, dup_score, db, organization=user_org
-    )
-
-    # Determine initial processing status & folder
-    initial_status = "pending_review"
-    if risk_level == "High" or dup_verdict == "Highly Likely Duplicate":
-        initial_status = "flagged"
-        cloud_path = cloud_storage_service.move_file(cloud_path, "flagged")
-
-    # 8. AES Encryption of Sensitive Fields
-    encrypted_gst = encryption_service.encrypt(data.get("gst_number"))
-    encrypted_tax = encryption_service.encrypt(data.get("tax_id"))
-    encrypted_bank = encryption_service.encrypt(data.get("bank_details"))
-
-    # Create Invoice Record
-    new_invoice = Invoice(
-        invoice_number=data.get("invoice_number"),
-        vendor_name=data.get("vendor_name"),
-        vendor_address=data.get("vendor_address"),
-        customer_name=data.get("customer_name"),
-        customer_address=data.get("customer_address"),
-        gst_number=encrypted_gst,
-        tax_id=encrypted_tax,
-        bank_details=encrypted_bank,
-        po_number=data.get("po_number"),
-        invoice_date=data.get("invoice_date"),
-        due_date=data.get("due_date"),
-        subtotal=data.get("subtotal", 0.0),
-        tax_amount=data.get("tax_amount", 0.0),
-        discount=data.get("discount", 0.0),
-        total_amount=data.get("total_amount", 0.0),
-        currency=data.get("currency", "USD"),
-        cloud_file_path=cloud_path,
-        original_filename=file.filename,
-        status=initial_status,
-        validation_status=val_status,
-        risk_score=risk_score,
-        risk_level=risk_level,
-        duplicate_status=dup_verdict,
-        sha256_checksum=sha256_hash,
-        organization=user_org,
-        user_id=current_user.id
-    )
-    db.add(new_invoice)
-    db.flush()
-
-    # Save Line Items
-    for itm in data.get("items", []):
-        line_item = InvoiceItem(
-            invoice_id=new_invoice.id,
-            description=itm.get("description", "Item"),
-            quantity=itm.get("quantity", 1.0),
-            unit_price=itm.get("unit_price", 0.0),
-            total_price=itm.get("total_price", 0.0)
-        )
-        db.add(line_item)
-
-    # Save Validation Results
-    for v in validation_items:
-        val_entry = ValidationResult(
-            invoice_id=new_invoice.id,
-            field_name=v.get("field_name"),
-            extracted_value=str(v.get("extracted_value") or ""),
-            validation_status=v.get("validation_status"),
-            confidence_score=v.get("confidence_score", 1.0),
-            validation_message=v.get("validation_message")
-        )
-        db.add(val_entry)
-
-    # Save Duplicate Check
-    dup_entry = DuplicateCheck(
-        invoice_id=new_invoice.id,
-        compared_invoice_id=matched_id,
-        similarity_score=dup_score,
-        duplicate_status=dup_verdict,
-        matching_fields=json.dumps(dup_breakdown) if dup_breakdown else "{}"
-    )
-    db.add(dup_entry)
-
-    # Save Fraud Alert
-    for reason in risk_reasons:
-        fraud_alert = FraudAlert(
-            invoice_id=new_invoice.id,
-            risk_score=risk_score,
-            risk_level=risk_level,
-            alert_reason=reason
-        )
-        db.add(fraud_alert)
-
-    # Save Audit Log
-    audit = AuditLog(
+    new_invoice = process_invoice_upload(
+        db,
+        file_bytes=file_bytes,
+        filename=file.filename,
+        organization=current_user.organization or "General",
         user_id=current_user.id,
-        invoice_id=new_invoice.id,
-        action="INVOICE_UPLOADED_AND_PROCESSED",
-        details=f"Uploaded '{file.filename}'. Risk: {risk_level} ({risk_score}), Duplicate: {dup_verdict} ({dup_score}%)."
+        source_channel="web",
     )
-    db.add(audit)
-    db.commit()
-    db.refresh(new_invoice)
-
     # Build clean response with decrypted sensitive fields and serialized relations
     return format_invoice_detail(new_invoice)
 
@@ -427,32 +316,14 @@ def approve_invoice(
     current_user: User = Depends(require_role(["admin", "reviewer"])),
     db: Session = Depends(get_db)
 ):
-    """Role-based approval: Reviewer or Admin only."""
+    """Role-based approval: Reviewer or Admin only (SoD enforced in invoice_actions)."""
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found.")
-
-    # Segregation of Duties (SoD) Anti-Fraud Enforcement
-    if invoice.user_id == current_user.id and current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Segregation of Duties (SoD) Violation: You cannot approve an invoice you submitted. An independent reviewer must verify and approve this invoice."
-        )
-
-    invoice.status = "approved"
-    # Move cloud storage file to processed folder
-    new_path = cloud_storage_service.move_file(invoice.cloud_file_path, "processed")
-    invoice.cloud_file_path = new_path
-
-    audit = AuditLog(
-        user_id=current_user.id,
-        invoice_id=invoice.id,
-        action="INVOICE_APPROVED",
-        details=f"Invoice #{invoice.invoice_number} approved by {current_user.name} ({current_user.role})."
-    )
-    db.add(audit)
-    db.commit()
-    db.refresh(invoice)
+    try:
+        invoice = invoice_actions.approve_invoice(db, invoice, current_user)
+    except invoice_actions.InvoiceActionError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
     return format_invoice_response(invoice)
 
 @router.post("/{invoice_id}/reject", response_model=InvoiceResponse)
@@ -465,18 +336,26 @@ def reject_invoice(
     invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found.")
+    try:
+        invoice = invoice_actions.reject_invoice(db, invoice, current_user)
+    except invoice_actions.InvoiceActionError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    return format_invoice_response(invoice)
 
-    invoice.status = "rejected"
-
-    audit = AuditLog(
-        user_id=current_user.id,
-        invoice_id=invoice.id,
-        action="INVOICE_REJECTED",
-        details=f"Invoice #{invoice.invoice_number} rejected by {current_user.name} ({current_user.role})."
-    )
-    db.add(audit)
-    db.commit()
-    db.refresh(invoice)
+@router.post("/{invoice_id}/mark-paid", response_model=InvoiceResponse)
+def mark_invoice_paid(
+    invoice_id: int,
+    current_user: User = Depends(require_role(["admin", "reviewer"])),
+    db: Session = Depends(get_db)
+):
+    """Mark an approved invoice as paid (used by the assistant's balance and vendor status answers)."""
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    try:
+        invoice = invoice_actions.mark_invoice_paid(db, invoice, current_user)
+    except invoice_actions.InvoiceActionError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
     return format_invoice_response(invoice)
 
 @router.get("/{invoice_id}/duplicates", response_model=dict)

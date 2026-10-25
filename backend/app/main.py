@@ -5,9 +5,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core.config import settings
+from app.core.config import settings, enforce_production_safety
 from app.database.session import init_db, engine
-from app.api import auth, invoices, ocr, dashboard, admin
+from app.api import auth, invoices, ocr, dashboard, admin, agent
 from app.services.cloud_storage_service import cloud_storage_service
 
 logging.basicConfig(
@@ -19,6 +19,8 @@ logger = logging.getLogger("invoshield")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting InvoShield AI backend service...")
+    # Hard stop (not just a log line) if production is running with default secrets.
+    enforce_production_safety(settings)
     try:
         init_db()
         logger.info("Database schema initialized and seed accounts verified.")
@@ -69,6 +71,7 @@ app.include_router(invoices.router)
 app.include_router(ocr.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
+app.include_router(agent.router)
 
 @app.get("/api/health", tags=["Health"])
 def health_check():

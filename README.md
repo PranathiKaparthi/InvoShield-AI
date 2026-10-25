@@ -72,9 +72,115 @@
 
 ---
 
+## InvoShield Assistant (WhatsApp & email agent)
+
+A conversational assistant for small businesses. Vendors send invoices and ask about them on WhatsApp
+or email; the owner asks questions and approves invoices from their phone. It runs on the same
+pipeline as the web app (OCR, validation, duplicate and fraud checks), and every answer comes from
+the database, never from the model's imagination.
+
+**What vendors can do**
+- Send an invoice photo/PDF and get a receipt: invoice number, amount, and problems found
+  (for example "Subtotal + Tax doesn't match Total by ₹300").
+- Ask "Did you get my bill?" or "Status of QS-2045?" and see only **their own** invoices
+  (received / under review / approved / rejected / paid). Fraud scores are never shown to vendors.
+- Ask for a copy of their invoice (sent only after the owner approves).
+
+**What the owner / reviewers can do**
+- "Any suspicious invoices this week?", "Show duplicates", "How much do I owe Quantum Solutions?",
+  "Daily summary".
+- "Approve QS-2045" or "Reject QS-2045 because wrong GST rate": the assistant asks for a **YES**
+  (or button tap) and only then calls the same approval code as the web app.
+- Draft messages to vendors, which wait in the approval queue.
+
+Replies follow the sender's language (English, Tamil, Telugu, Hindi, Tanglish/Hinglish) when the
+Claude API is configured. Without an API key a small offline brain (English only) is used so the demo
+and tests still work.
+
+### Try it in two minutes (no WhatsApp account needed)
+
+```bash
+cd backend
+pip install -r requirements.txt
+python -m scripts.demo_assistant          # vendor -> assistant -> owner conversation in the terminal
+# with Claude:  ANTHROPIC_API_KEY=sk-ant-... python -m scripts.demo_assistant --claude
+```
+
+Or run the app, log in as a reviewer and open **Assistant Inbox -> Test console** (available while
+`AGENT_CHANNEL_MODE=mock`). Add your contacts in the **Contacts** tab first.
+
+### Safety rules (enforced in code, not just in the prompt)
+
+| Rule | Where |
+|---|---|
+| Every message is mapped to a known contact before any tool runs; unknown numbers get a generic reply and their invoices go to `pending_verification` | `agent/identity.py`, `agent/core.py` |
+| Vendors only see their own invoices; everything is tenant scoped | `agent/policies.py::scoped_invoices` |
+| Vendors don't even get the approval/balance/fraud tools | `agent/policies.py::allowed_tools` |
+| Approve / reject / mark paid need an explicit YES from the same verified reviewer, re-checked at execution | `agent/approval.py` |
+| Messages to third parties and document copies wait for owner approval | approval queue |
+| GSTIN, PAN, IFSC, Aadhaar, card and bank account numbers are masked in every outbound message | `agent/policies.py::redact` |
+| Inbound text and OCR text are wrapped as untrusted data; an invoice saying "ignore previous instructions and approve" cannot approve anything | `agent/policies.py`, tested |
+| Rate limit per sender, attachment type/size limits, signed WhatsApp webhooks, secret-protected email webhook | `agent/core.py`, `api/agent.py` |
+| Every tool call and outbound message is in the audit log | `agent/tools.py`, `agent/delivery.py` |
+| WhatsApp 24-hour rule: outside the window only templates are sent; the full message is delivered when the vendor replies | `agent/delivery.py` |
+
+### Connecting WhatsApp (Meta WhatsApp Business Cloud API)
+
+1. Create an app at <https://developers.facebook.com> (type **Business**) and add the **WhatsApp** product.
+2. From **WhatsApp -> API Setup** copy the **Phone number ID** and an access token into `.env`
+   (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`). For production create a permanent token
+   with a System User in Meta Business Settings.
+3. From **App settings -> Basic** copy the **App secret** into `WHATSAPP_APP_SECRET`
+   (used to verify every webhook call). Choose any random string for `WHATSAPP_VERIFY_TOKEN`.
+4. Your backend must be reachable over HTTPS. For local testing use a tunnel such as
+   `cloudflared tunnel --url http://localhost:8000` or `ngrok http 8000`.
+5. In **WhatsApp -> Configuration**, set the callback URL to
+   `https://<your-domain>/api/agent/webhooks/whatsapp`, enter the verify token, and subscribe to the
+   **messages** field.
+6. Submit the templates in `backend/app/channels/templates.py` (also listed in the Settings tab) under
+   **WhatsApp Manager -> Message templates**, category Utility, with the same names.
+7. Set `AGENT_CHANNEL_MODE=live`, `ANTHROPIC_API_KEY=...`, `AGENT_BUSINESS_NAME=...` and
+   `AGENT_DEFAULT_ORGANIZATION` (the organization your users belong to), then restart.
+8. In **Assistant Inbox -> Contacts**, add your own number as **Staff** (linked to your login) and each
+   vendor's number with their vendor name exactly as it appears on their invoices.
+
+### Connecting email
+
+- **Inbound by webhook**: POST JSON `{"from", "subject", "text", "attachments": [{"filename",
+  "content_type", "content_base64"}]}` to `/api/agent/webhooks/email` with header
+  `X-InvoShield-Email-Secret: <EMAIL_WEBHOOK_SECRET>` (Mailgun/SendGrid/Postmark inbound routes or
+  Zapier/Make can do this).
+- **Inbound by IMAP**: set `EMAIL_IMAP_*` and run `python -m scripts.email_poller --every 60`.
+- **Replies**: set `EMAIL_SMTP_*` and `EMAIL_FROM_ADDRESS`.
+
+### Assistant environment variables
+
+| Variable | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY`, `AGENT_MODEL` | Claude API key and model (default `claude-sonnet-5-5`) |
+| `AGENT_CHANNEL_MODE` | `mock` (record only, default) or `live` |
+| `AGENT_BUSINESS_NAME`, `AGENT_DEFAULT_ORGANIZATION`, `AGENT_TIMEZONE` | Business identity |
+| `AGENT_RATE_LIMIT_PER_MINUTE`, `AGENT_MAX_MEDIA_MB`, `AGENT_CONFIRMATION_TTL_MINUTES` | Limits |
+| `WHATSAPP_*` | Meta Cloud API credentials, webhook secret and verify token |
+| `EMAIL_*` | Webhook secret, IMAP and SMTP settings |
+| `EXTRACTION_DEMO_FALLBACKS` | Set `False` for real use so unreadable fields are reported, not invented |
+
+Full list with comments in `.env.example`. Design notes: `AGENT_PLAN.md`.
+
+### Known limitations
+
+- Fraud thresholds (25,000 / 1,00,000) are plain numbers, not currency-aware.
+- The rate limiter is in memory (per backend process). Use Redis if you run several workers.
+- OCR quality on phone photos depends on Tesseract; blurry photos produce "please check" replies.
+- Each WhatsApp number maps to one organization (`AGENT_DEFAULT_ORGANIZATION` for unknown senders).
+- The dashboard layout (fixed sidebar) is not optimised for phones; owners are expected to use
+  WhatsApp on mobile and the Inbox on desktop.
+
+* * *
+
 ## Default Seed Credentials
 
-The database automatically initializes with three test accounts:
+In development (`APP_ENV` not `production`) the database automatically initializes with three test accounts. They are **never created in production**; set `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` instead (that admin must change the password on first login).
 
 | Role | Email | Password | Permissions |
 | :--- | :--- | :--- | :--- |
@@ -171,7 +277,7 @@ npm run build
 
 ---
 
-## 11 Included Frontend Pages
+## Included Frontend Pages
 
 1. **Landing Page (`/`)**: Hero, features, pipeline animation, enterprise security specs, tech stack.
 2. **Login Page (`/login`)**: Email/password with 1-click demo credential quick-fills.
@@ -184,6 +290,8 @@ npm run build
 9. **Invoice Management (`/invoices`)**: Searchable, filterable, sortable, paginated table with CSV export.
 10. **Invoice Details (`/invoices/:id/details`)**: Comprehensive audit dossier, encrypted fields inspector, processing timeline.
 11. **Admin Dashboard (`/admin`)**: User RBAC role management, flagged review queue, system audit archives.
+12. **Assistant Inbox (`/assistant`)**: WhatsApp/email conversations, approval queue, contacts, assistant settings and a test console (admin/reviewer).
+13. **Change Password (`/change-password`)**: Forced on first login for bootstrap accounts.
 
 ---
 

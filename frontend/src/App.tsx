@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CurrencyProvider } from './context/CurrencyContext';
 import { DashboardLayout } from './layouts/DashboardLayout';
@@ -16,6 +16,8 @@ import { RiskAnalysisPage } from './pages/RiskAnalysisPage';
 import { InvoiceManagementPage } from './pages/InvoiceManagementPage';
 import { InvoiceDetailsPage } from './pages/InvoiceDetailsPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AssistantInboxPage } from './pages/AssistantInboxPage';
+import { ChangePasswordPage } from './pages/ChangePasswordPage';
 
 // Protected Route Guard
 const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({
@@ -23,6 +25,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
   allowedRoles,
 }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -34,6 +37,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // First login with an initial password: nothing else is reachable until it is changed.
+  if (user.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
@@ -53,6 +61,14 @@ export const App: React.FC = () => {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route
+              path="/change-password"
+              element={
+                <ProtectedRoute>
+                  <ChangePasswordPage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Protected Dashboard Routes */}
             <Route
@@ -71,6 +87,16 @@ export const App: React.FC = () => {
               <Route path="/invoices/:id/duplicates" element={<DuplicateDetectionPage />} />
               <Route path="/risk-analysis" element={<RiskAnalysisPage />} />
               <Route path="/invoices/:id/risk-analysis" element={<RiskAnalysisPage />} />
+
+              {/* InvoShield Assistant (owners / reviewers) */}
+              <Route
+                path="/assistant"
+                element={
+                  <ProtectedRoute allowedRoles={['admin', 'reviewer']}>
+                    <AssistantInboxPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Admin Only Route */}
               <Route

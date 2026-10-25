@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   CheckSquare,
   Cpu,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -24,6 +25,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Invoice Archive', path: '/invoices', icon: FileText },
         { label: 'Duplicate Detection', path: '/duplicates', icon: CopyCheck },
         { label: 'Fraud & Risk Engine', path: '/risk-analysis', icon: AlertTriangle },
+        { label: 'Assistant Inbox', path: '/assistant', icon: MessageCircle },
       ];
     }
     if (isReviewer) {
@@ -33,6 +35,7 @@ export const Sidebar: React.FC = () => {
         { label: 'Invoice Review Queue', path: '/invoices', icon: CheckSquare },
         { label: 'Duplicate Detection', path: '/duplicates', icon: CopyCheck },
         { label: 'Fraud & Risk Engine', path: '/risk-analysis', icon: AlertTriangle },
+        { label: 'Assistant Inbox', path: '/assistant', icon: MessageCircle },
       ];
     }
     // Standard User

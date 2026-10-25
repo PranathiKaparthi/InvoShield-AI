@@ -9,6 +9,7 @@ interface AuthContextType {
   login: (credentials: any) => Promise<void>;
   register: (data: any) => Promise<void>;
   logout: () => void;
+  updateUser: (u: User) => void;
   isAdmin: boolean;
   isReviewer: boolean;
   canApprove: boolean;
@@ -70,6 +71,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.location.href = '/login';
   };
 
+  const updateUser = (u: User) => {
+    localStorage.setItem('invoshield_user', JSON.stringify(u));
+    setUser(u);
+  };
+
   const isAdmin = user?.role === 'admin';
   const isReviewer = user?.role === 'reviewer';
   const canApprove = isAdmin || isReviewer;
@@ -83,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        updateUser,
         isAdmin,
         isReviewer,
         canApprove,

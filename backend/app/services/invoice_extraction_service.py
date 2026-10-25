@@ -9,7 +9,13 @@ class InvoiceExtractionService:
     - Computes confidence score per field.
     """
 
-    def extract(self, text: str, base_confidence: float = 0.90) -> Dict[str, Any]:
+    def extract(self, text: str, base_confidence: float = 0.90, demo_fallbacks: bool = True) -> Dict[str, Any]:
+        """
+        demo_fallbacks=True keeps the original behaviour of filling unreadable fields with sample
+        values (useful for UI demos). demo_fallbacks=False leaves them empty so validation reports
+        them as Missing; the InvoShield Assistant always uses this honest mode, because vendors and
+        owners must never be told an invented amount, GSTIN or bank account.
+        """
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         
         extracted: Dict[str, Any] = {
@@ -40,7 +46,7 @@ class InvoiceExtractionService:
             extracted["currency"] = "EUR"
         elif "£" in text or "GBP" in text:
             extracted["currency"] = "GBP"
-        elif "₹" in text or "INR" in text:
+        elif "₹" in text or "INR" in text or re.search(r"\bRs\.?\s?\d", text):
             extracted["currency"] = "INR"
         extracted["field_confidences"]["currency"] = 0.95
 
@@ -56,7 +62,7 @@ class InvoiceExtractionService:
         if inv_match:
             extracted["invoice_number"] = inv_match.group(1).strip()
             extracted["field_confidences"]["invoice_number"] = min(1.0, round(base_confidence * 0.98, 2))
-        else:
+        elif demo_fallbacks:
             extracted["invoice_number"] = "INV-" + datetime.now().strftime("%Y%m%d%H%M")
             extracted["field_confidences"]["invoice_number"] = 0.50
 
@@ -71,7 +77,7 @@ class InvoiceExtractionService:
                 extracted["invoice_date"] = d_match.group(1).strip()
                 extracted["field_confidences"]["invoice_date"] = min(1.0, round(base_confidence * 0.95, 2))
                 break
-        if not extracted["invoice_date"]:
+        if not extracted["invoice_date"] and demo_fallbacks:
             extracted["invoice_date"] = datetime.now().strftime("%Y-%m-%d")
             extracted["field_confidences"]["invoice_date"] = 0.40
 
@@ -79,7 +85,7 @@ class InvoiceExtractionService:
         if due_match:
             extracted["due_date"] = due_match.group(1).strip()
             extracted["field_confidences"]["due_date"] = min(1.0, round(base_confidence * 0.94, 2))
-        else:
+        elif demo_fallbacks:
             extracted["due_date"] = extracted["invoice_date"]
             extracted["field_confidences"]["due_date"] = 0.40
 
@@ -91,7 +97,7 @@ class InvoiceExtractionService:
         elif len(lines) > 0:
             extracted["vendor_name"] = lines[0].strip()[:60]
             extracted["field_confidences"]["vendor_name"] = 0.70
-        else:
+        elif demo_fallbacks:
             extracted["vendor_name"] = "Acme Corp International"
             extracted["field_confidences"]["vendor_name"] = 0.40
 
@@ -99,7 +105,7 @@ class InvoiceExtractionService:
         if v_addr:
             extracted["vendor_address"] = v_addr.group(1).strip()
             extracted["field_confidences"]["vendor_address"] = 0.85
-        else:
+        elif demo_fallbacks:
             extracted["vendor_address"] = "100 Tech Enterprise Blvd, Suite 400"
             extracted["field_confidences"]["vendor_address"] = 0.50
 
@@ -108,7 +114,7 @@ class InvoiceExtractionService:
         if cust_match:
             extracted["customer_name"] = cust_match.group(1).strip()
             extracted["field_confidences"]["customer_name"] = min(1.0, round(base_confidence * 0.90, 2))
-        else:
+        elif demo_fallbacks:
             extracted["customer_name"] = "InvoShield Global Corp"
             extracted["field_confidences"]["customer_name"] = 0.45
 
@@ -116,7 +122,7 @@ class InvoiceExtractionService:
         if c_addr:
             extracted["customer_address"] = c_addr.group(1).strip()
             extracted["field_confidences"]["customer_address"] = 0.85
-        else:
+        elif demo_fallbacks:
             extracted["customer_address"] = "742 Evergreen Terrace, Sector 7"
             extracted["field_confidences"]["customer_address"] = 0.50
 
@@ -127,7 +133,7 @@ class InvoiceExtractionService:
             extracted["tax_id"] = extracted["gst_number"]
             extracted["field_confidences"]["gst_number"] = 0.95
             extracted["field_confidences"]["tax_id"] = 0.95
-        else:
+        elif demo_fallbacks:
             extracted["gst_number"] = "29ABCDE1234F1Z5"
             extracted["tax_id"] = "TX-99887766"
             extracted["field_confidences"]["gst_number"] = 0.50
@@ -137,7 +143,7 @@ class InvoiceExtractionService:
         if bank_match:
             extracted["bank_details"] = bank_match.group(1).strip()
             extracted["field_confidences"]["bank_details"] = 0.90
-        else:
+        elif demo_fallbacks:
             extracted["bank_details"] = "IBAN: US98CHAS0001234567890"
             extracted["field_confidences"]["bank_details"] = 0.50
 
@@ -146,7 +152,7 @@ class InvoiceExtractionService:
         if po_match:
             extracted["po_number"] = po_match.group(1).strip()
             extracted["field_confidences"]["po_number"] = 0.90
-        else:
+        elif demo_fallbacks:
             extracted["po_number"] = "PO-2024-8831"
             extracted["field_confidences"]["po_number"] = 0.50
 
@@ -154,41 +160,56 @@ class InvoiceExtractionService:
         def extract_amount(pattern: str) -> Optional[float]:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                val_str = match.group(1).replace(",", "").replace("$", "").replace("€", "").replace("£", "").strip()
+                val_str = match.group(1).replace(",", "").replace("$", "").replace("€", "").replace("£", "").replace("₹", "").strip()
                 try:
                     return float(val_str)
                 except ValueError:
                     return None
             return None
 
-        total = extract_amount(r"\b(?:grand\s*total|total\s*amount|amount\s*due|balance\s*due|net\s*total|\btotal)\s*[:\-]?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)")
-        subtotal = extract_amount(r"\b(?:sub\s*total|subtotal|net\s*amount)\s*[:\-]?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)")
-        tax = extract_amount(r"\b(?:tax\s*amount|sales\s*tax|vat\s*amount|gst\s*amount|tax|gst|vat)\s*[:\-]?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)")
-        discount = extract_amount(r"\b(?:discount|rebate)\s*[:\-]?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)") or 0.0
+        total = extract_amount(r"\b(?:grand\s*total|total\s*amount|amount\s*due|balance\s*due|net\s*total|\btotal)\s*[:\-]?\s*(?:Rs\.?|INR)?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)")
+        subtotal = extract_amount(r"\b(?:sub\s*total|subtotal|net\s*amount)\s*[:\-]?\s*(?:Rs\.?|INR)?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)")
+        tax = extract_amount(r"\b(?:tax\s*amount|sales\s*tax|vat\s*amount|gst\s*amount|tax|gst|vat)\s*[:\-]?\s*(?:Rs\.?|INR)?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)")
+        discount = extract_amount(r"\b(?:discount|rebate)\s*[:\-]?\s*(?:Rs\.?|INR)?\s*[\$€£₹]?\s*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)") or 0.0
 
         if total is not None:
             extracted["total_amount"] = total
             extracted["field_confidences"]["total_amount"] = 0.95
-        else:
+        elif demo_fallbacks:
             extracted["total_amount"] = 1250.00
             extracted["field_confidences"]["total_amount"] = 0.50
+        else:
+            extracted["field_confidences"]["total_amount"] = 0.0
 
         if subtotal is not None:
             extracted["subtotal"] = subtotal
             extracted["field_confidences"]["subtotal"] = 0.92
-        else:
+        elif demo_fallbacks:
             extracted["subtotal"] = round(extracted["total_amount"] / 1.10, 2)
             extracted["field_confidences"]["subtotal"] = 0.50
 
         if tax is not None:
             extracted["tax_amount"] = tax
             extracted["field_confidences"]["tax_amount"] = 0.90
-        else:
+        elif demo_fallbacks:
             extracted["tax_amount"] = round(extracted["total_amount"] - extracted["subtotal"], 2)
             extracted["field_confidences"]["tax_amount"] = 0.50
 
         extracted["discount"] = discount
         extracted["field_confidences"]["discount"] = 0.85
+
+        # Honest mode: derive (never invent) a missing subtotal/tax from the amounts that were read,
+        # so a total-only invoice isn't reported as a maths error.
+        if not demo_fallbacks and total is not None:
+            if subtotal is None and tax is None:
+                extracted["subtotal"] = total + discount
+                extracted["field_confidences"]["subtotal"] = 0.30
+            elif subtotal is None:
+                extracted["subtotal"] = round(total - tax + discount, 2)
+                extracted["field_confidences"]["subtotal"] = 0.30
+            elif tax is None:
+                extracted["tax_amount"] = round(total - subtotal + discount, 2)
+                extracted["field_confidences"]["tax_amount"] = 0.30
 
         # 9. Line Items
         item_pattern = re.compile(r"^\s*([A-Za-z0-9\s\-_.]{4,50})\s+(\d+(?:\.\d+)?)\s+[\$€£₹]?(\d+(?:\.\d+)?)\s+[\$€£₹]?(\d+(?:\.\d+)?)\s*$", re.MULTILINE)
@@ -205,7 +226,7 @@ class InvoiceExtractionService:
             except Exception:
                 continue
 
-        if not line_items:
+        if not line_items and demo_fallbacks:
             # Generate representative default line items based on subtotal
             part = round(extracted["subtotal"] / 2, 2)
             line_items = [
