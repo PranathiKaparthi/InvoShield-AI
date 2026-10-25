@@ -13,11 +13,13 @@ import {
   Edit2,
 } from 'lucide-react';
 import { invoicesApi } from '../services/api';
+import { useInvoiceFileUrl } from '../services/useInvoiceFile';
 import { Invoice } from '../types';
 import { useCurrency } from '../context/CurrencyContext';
 
 export const InvoiceDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const fileUrl = useInvoiceFileUrl(id) ?? undefined;
   const { formatAmount } = useCurrency();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +42,6 @@ export const InvoiceDetailsPage: React.FC = () => {
     );
   }
 
-  const fileUrl = invoicesApi.getFileUrl(invoice.id);
 
   return (
     <div className="space-y-5 max-w-5xl mx-auto">

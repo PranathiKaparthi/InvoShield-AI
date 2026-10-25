@@ -19,12 +19,14 @@ import {
   Lock,
 } from 'lucide-react';
 import { invoicesApi } from '../services/api';
+import { useInvoiceFileUrl } from '../services/useInvoiceFile';
 import { Invoice } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
 
 export const InvoiceResultPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const fileUrl = useInvoiceFileUrl(id) ?? undefined;
   const { currency, formatAmount } = useCurrency();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,7 +137,6 @@ export const InvoiceResultPage: React.FC = () => {
     }
   };
 
-  const fileUrl = invoicesApi.getFileUrl(invoice.id);
   const isPdf = invoice.original_filename?.toLowerCase().endsWith('.pdf');
 
   return (
