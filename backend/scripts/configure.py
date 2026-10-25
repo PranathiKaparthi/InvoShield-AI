@@ -314,6 +314,7 @@ def main() -> None:
               "invoice details) to improve its products. Turn on billing for the key's project to avoid that.")
         key = cur.get("GOOGLE_API_KEY", "")
         model = cur.get("GEMINI_MODEL", "")
+        listed, models = False, []
         while True:
             key = ask("Google API key (starts with AIza)", key or None, secret=True, required=True)
             listed, models, msg = gemini_models(key)
@@ -350,7 +351,13 @@ def main() -> None:
             if not yes("Try again?"):
                 print(f"{YELLOW}  Saved anyway; the assistant will hand chats to your team until the key works.{END}")
                 break
-        up.update({"GOOGLE_API_KEY": key, "GEMINI_MODEL": model, "AGENT_LLM_PROVIDER": "gemini"})
+        backups = [m for m in models if m != model][:3] if listed else []
+        if "gemini-flash-latest" in models and model != "gemini-flash-latest" and "gemini-flash-latest" not in backups:
+            backups = (backups[:2] + ["gemini-flash-latest"])
+        up.update({"GOOGLE_API_KEY": key, "GEMINI_MODEL": model, "AGENT_LLM_PROVIDER": "gemini",
+                   "GEMINI_FALLBACK_MODELS": ",".join(backups)})
+        if backups:
+            print(f"  Backups if {model} is busy: {', '.join(backups)}")
 
     # ---------------------------------------------------------------- WhatsApp
     section("3. WhatsApp (Meta WhatsApp Business Cloud API)")

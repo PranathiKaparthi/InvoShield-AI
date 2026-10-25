@@ -199,7 +199,7 @@ The manual steps below explain what each value is and where to find it.
 | Variable | Purpose |
 |---|---|
 | `AGENT_LLM_PROVIDER` | `gemini` or `anthropic` |
-| `GOOGLE_API_KEY`, `GEMINI_MODEL` | Google Gemini key and model (the wizard picks the newest stable "flash" model) |
+| `GOOGLE_API_KEY`, `GEMINI_MODEL` | Google Gemini key and model (the wizard lists the models your key can use and saves backups for busy periods) |
 | `ANTHROPIC_API_KEY`, `AGENT_MODEL` | Claude API key and model (default `claude-sonnet-5-5`) |
 | `AGENT_CHANNEL_MODE` | `mock` (record only, default) or `live` |
 | `AGENT_BUSINESS_NAME`, `AGENT_DEFAULT_ORGANIZATION`, `AGENT_TIMEZONE` | Business identity |
