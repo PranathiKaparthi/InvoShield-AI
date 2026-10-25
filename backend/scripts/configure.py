@@ -327,7 +327,11 @@ def main() -> None:
                 break
             if models:
                 print("  Available: " + ", ".join(models[:6]) + (" ..." if len(models) > 6 else ""))
-            model = ask("Model", model if model in models else (models[0] if models else "gemini-2.5-flash"))
+            suggested = model if model in models else (models[0] if models else "gemini-2.5-flash")
+            model = ask("Model (press Enter to use the one in brackets)", suggested)
+            if model.lower() in ("y", "yes", "n", "no", "ok") or (models and model not in models and len(model) < 6):
+                print(f"  Using {suggested}.")
+                model = suggested
             good, msg = check_gemini(key, model)
             if good:
                 ok(msg)
