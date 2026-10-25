@@ -93,6 +93,25 @@ the database, never from the model's imagination.
   (or button tap) and only then calls the same approval code as the web app.
 - Draft messages to vendors, which wait in the approval queue.
 
+**Easy to use: just say "hi".** Anyone can send "hi", "menu", "vanakkam" or "namaste" to get a short
+numbered menu for their role, then reply with a number:
+
+```
+Hello Ravi! I'm the invoice assistant for Sri Lakshmi Traders.
+Reply with a number:
+1. My invoices and their status
+2. Payment status
+3. Status of one invoice
+4. Get a copy of an invoice
+5. Talk to the team
+To send a new invoice, just attach the PDF or photo here.
+```
+
+Owners get: suspicious invoices, duplicates, today's summary, invoices waiting for review, how much
+they owe a vendor, approve/reject. Options that need more detail ask one simple question
+("Which vendor?"). People can also just type normally: "bill aaya kya?", "payment kab milega",
+"enna status anna", "Quantum Solutions ko kitna dena hai", "मेरा बिल मिला?", "என் பில் நிலை என்ன".
+
 Replies follow the sender's language (English, Tamil, Telugu, Hindi, Tanglish/Hinglish) when the
 Claude API is configured. Without an API key a small offline brain (English only) is used so the demo
 and tests still work.
@@ -163,13 +182,16 @@ Or run the app, log in as a reviewer and open **Assistant Inbox -> Test console*
 | `AGENT_RATE_LIMIT_PER_MINUTE`, `AGENT_MAX_MEDIA_MB`, `AGENT_CONFIRMATION_TTL_MINUTES` | Limits |
 | `WHATSAPP_*` | Meta Cloud API credentials, webhook secret and verify token |
 | `EMAIL_*` | Webhook secret, IMAP and SMTP settings |
-| `EXTRACTION_DEMO_FALLBACKS` | Set `False` for real use so unreadable fields are reported, not invented |
+| `EXTRACTION_DEMO_FALLBACKS` | Default `False`: unreadable fields are reported, never invented |
+| `FRAUD_REVIEW_THRESHOLD_INR`, `FRAUD_HIGH_THRESHOLD_INR` | When a rupee invoice counts as large (default ₹2,00,000 / ₹10,00,000) |
 
 Full list with comments in `.env.example`. Design notes: `AGENT_PLAN.md`.
 
 ### Known limitations
 
-- Fraud thresholds (25,000 / 1,00,000) are plain numbers, not currency-aware.
+- Without `ANTHROPIC_API_KEY` the assistant understands common English/Hinglish/Tanglish phrasing and
+  some Tamil/Telugu/Hindi words, but always replies in English. Add a key for full multilingual chat.
+- Currency conversion on dashboards uses fixed approximate rates (`FX_RATES_PER_USD`), not live rates.
 - The rate limiter is in memory (per backend process). Use Redis if you run several workers.
 - OCR quality on phone photos depends on Tesseract; blurry photos produce "please check" replies.
 - Each WhatsApp number maps to one organization (`AGENT_DEFAULT_ORGANIZATION` for unknown senders).

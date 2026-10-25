@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
+import { User } from '../types';
 import { authApi } from '../services/api';
 
 interface AuthContextType {
@@ -33,7 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const res = await authApi.getMe();
           setUser(res.data);
           localStorage.setItem('invoshield_user', JSON.stringify(res.data));
-        } catch (err) {
+        } catch {
           localStorage.removeItem('invoshield_token');
           localStorage.removeItem('invoshield_user');
           setUser(null);

@@ -4,10 +4,8 @@ import {
   FileText,
   ArrowLeft,
   Lock,
-  CopyCheck,
   AlertTriangle,
   History,
-  CheckCircle2,
   ExternalLink,
   ShieldCheck,
   Eye,
@@ -105,8 +103,8 @@ export const InvoiceDetailsPage: React.FC = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-lg bg-white border border-gray-200 space-y-1 shadow-xs">
           <span className="text-xs text-gray-500">Total Billed</span>
-          <p className="text-xl font-bold text-gray-900">{formatAmount(invoice.total_amount)}</p>
-          <span className="text-[11px] text-gray-500">Subtotal: {formatAmount(invoice.subtotal)}</span>
+          <p className="text-xl font-bold text-gray-900">{formatAmount(invoice.total_amount, 2, invoice.currency)}</p>
+          <span className="text-[11px] text-gray-500">Subtotal: {formatAmount(invoice.subtotal, 2, invoice.currency)}</span>
         </div>
 
         <div className="p-3.5 rounded-lg bg-white border border-gray-200 space-y-1 shadow-xs">

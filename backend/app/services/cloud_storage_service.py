@@ -1,8 +1,6 @@
 import os
-import io
 import uuid
 import logging
-from typing import Optional
 import boto3
 from botocore.exceptions import ClientError, EndpointConnectionError
 from app.core.config import settings

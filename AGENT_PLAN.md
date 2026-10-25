@@ -73,3 +73,20 @@ frontend/src/pages/AssistantInboxPage.tsx, ChangePasswordPage.tsx
 `agent_contacts`, `agent_conversations`, `agent_messages`, `agent_approvals`, `agent_settings`.
 New columns: `invoices.payment_status`, `invoices.source_channel`, `invoices.source_contact_id`,
 `users.must_change_password`. Added automatically by `init_db()` (idempotent, SQLite and PostgreSQL).
+
+## 7. Second pass: errors fixed
+
+| Problem | Fix |
+|---|---|
+| Any logged-in user could open, download, re-validate or analyse **any** invoice by ID; reviewers could read/edit other companies' invoices | `load_invoice_for_user()` on every invoice route (404 outside your scope) |
+| Anyone could self-register as **reviewer of an existing company** via the API | Joining an existing organization always starts as `user`; only a new organization's first account may be reviewer |
+| Reviewers' dashboard activity feed showed every company's audit events | Scoped to the reviewer's organization |
+| Rupee invoices displayed as dollars (₹2,83,500 shown as $283,500, or ×83 in INR view); dashboard added ₹ and $ together | Amounts converted from each invoice's own currency; dashboard totals normalised |
+| Dashboard showed two made-up vendors when there was no data | Removed |
+| Fraud thresholds treated ₹25,000 like $25,000 | Per-currency, configurable thresholds |
+| Extractor invented values by default | `EXTRACTION_DEMO_FALLBACKS` now defaults to `False` |
+| `smoke_test.py` failed on a fresh clone | Creates the database first |
+| Stale duplicate `backend/services/` folder; unused imports/variables (Python and TypeScript) | Removed |
+| Dashboard unusable on phones | Menu button + slide-out sidebar |
+| Daily summary showed rupee vendor totals with a $ sign | Each vendor keeps its own currency |
+| Assistant needed exact phrasing | Numbered menu, follow-up questions, everyday Hinglish/Tanglish and native-script keywords, plain-language replies |

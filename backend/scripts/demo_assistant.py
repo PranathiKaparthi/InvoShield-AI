@@ -52,9 +52,9 @@ Due Date: 2026-11-19
 Vendor: Quantum Solutions LLC
 Customer: Sri Lakshmi Traders
 GST Number: 33AABCT1332L1Z1
-Subtotal: Rs. 40,000.00
-Tax Amount: Rs. 7,200.00
-Total Amount: Rs. 47,500.00
+Subtotal: Rs. 2,40,000.00
+Tax Amount: Rs. 43,200.00
+Total Amount: Rs. 2,83,500.00
 """
 
 BLUE, GREEN, GREY, BOLD, END = "\033[94m", "\033[92m", "\033[90m", "\033[1m", "\033[0m"
@@ -101,13 +101,15 @@ def main():
     db.commit()
 
     print(f"\n{BOLD}InvoShield Assistant demo{END}  (brain: {provider_status()['provider']}, channel: mock WhatsApp)\n")
-    send(db, VENDOR, "Vendor", "Hi, sending this month's bill", INVOICE)
-    send(db, VENDOR, "Vendor", "Did you get my bill? When will I be paid?")
-    send(db, OWNER, "Owner", "Any suspicious invoices this week?")
-    send(db, OWNER, "Owner", "How much do I owe Quantum Solutions?")
+    send(db, VENDOR, "Vendor", "Hi")
+    send(db, VENDOR, "Vendor", "sending this month's bill", INVOICE)
+    send(db, VENDOR, "Vendor", "payment kab milega?")
+    send(db, OWNER, "Owner", "vanakkam")
+    send(db, OWNER, "Owner", "1")
+    send(db, OWNER, "Owner", "Quantum Solutions ko kitna dena hai?")
     send(db, OWNER, "Owner", "Approve QS-2045")
     send(db, OWNER, "Owner", "YES")
-    send(db, VENDOR, "Vendor", "Status of QS-2045?")
+    send(db, VENDOR, "Vendor", "bill aaya kya? status?")
     send(db, "+919812345678", "Unknown number", "What's my payment status?")
     db.close()
 

@@ -7,15 +7,13 @@ import {
   CopyCheck,
   AlertTriangle,
   ShieldAlert,
-  ShieldCheck,
   CheckSquare,
-  Cpu,
   MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export const Sidebar: React.FC = () => {
-  const { user, isAdmin, isReviewer } = useAuth();
+export const Sidebar: React.FC<{ open?: boolean; onClose?: () => void }> = ({ open = false, onClose }) => {
+  const { isAdmin, isReviewer } = useAuth();
 
   const getNavItems = () => {
     if (isAdmin) {
@@ -51,7 +49,14 @@ export const Sidebar: React.FC = () => {
   const navItems = getNavItems();
 
   return (
-    <aside className="w-56 bg-white border-r border-gray-200 flex flex-col justify-between shrink-0 min-h-[calc(100vh-3.5rem)]">
+    <>
+    {/* Phone: dimmed backdrop behind the drawer */}
+    {open && <div className="fixed inset-0 top-14 bg-black/30 z-30 md:hidden" onClick={onClose} aria-hidden="true" />}
+    <aside
+      className={`w-56 bg-white border-r border-gray-200 flex-col justify-between shrink-0 min-h-[calc(100vh-3.5rem)]
+        md:flex md:static md:z-auto
+        ${open ? 'flex fixed top-14 left-0 bottom-0 z-40 shadow-xl overflow-y-auto' : 'hidden'}`}
+    >
       <div className="p-3 space-y-4">
         <div className="space-y-1">
           <div className="px-3 py-1 flex items-center justify-between">
@@ -110,5 +115,6 @@ export const Sidebar: React.FC = () => {
         <p className="text-[10px]">Accounts Payable System</p>
       </div>
     </aside>
+    </>
   );
 };

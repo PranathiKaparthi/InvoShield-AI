@@ -8,9 +8,6 @@ import {
   AlertTriangle,
   Lock,
   ArrowRight,
-  Database,
-  Cpu,
-  Layers,
   FileText,
 } from 'lucide-react';
 import { Navbar } from '../components/Navbar';

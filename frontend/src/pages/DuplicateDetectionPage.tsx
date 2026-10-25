@@ -1,12 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import {
-  CopyCheck,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
-  AlertTriangle,
-  Layers,
 } from 'lucide-react';
 import { invoicesApi } from '../services/api';
 import { Invoice } from '../types';
@@ -108,7 +105,7 @@ export const DuplicateDetectionPage: React.FC = () => {
           >
             {invoices.map((inv) => (
               <option key={inv.id} value={inv.id}>
-                #{inv.invoice_number || `ID ${inv.id}`} · {inv.vendor_name} ({formatAmount(inv.total_amount)})
+                #{inv.invoice_number || `ID ${inv.id}`} · {inv.vendor_name} ({formatAmount(inv.total_amount, 2, inv.currency)})
               </option>
             ))}
           </select>
@@ -170,7 +167,7 @@ export const DuplicateDetectionPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-500">Total Amount:</span>
-                    <span className="text-gray-900 font-semibold">{formatAmount(currentInv?.total_amount)}</span>
+                    <span className="text-gray-900 font-semibold">{formatAmount(currentInv?.total_amount, 2, currentInv?.currency)}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-500">Invoice Date:</span>
@@ -209,7 +206,7 @@ export const DuplicateDetectionPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-500">Total Amount:</span>
-                    <span className="text-gray-900 font-semibold">{formatAmount(matchedInv?.total_amount)}</span>
+                    <span className="text-gray-900 font-semibold">{formatAmount(matchedInv?.total_amount, 2, matchedInv?.currency)}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-500">Invoice Date:</span>

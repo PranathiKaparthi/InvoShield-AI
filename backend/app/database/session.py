@@ -69,7 +69,8 @@ def run_column_migrations(bind=None):
 
 def init_db():
     """Create tables, run column migrations, and seed accounts according to the environment."""
-    import app.models  # noqa: F401  (registers all models, including the assistant tables)
+    import app.models  # noqa: F401  registers every model (incl. assistant tables) before create_all
+    assert app.models
     from app.models.entities import User
     from app.core.security import get_password_hash
     from app.core.config import enforce_production_safety

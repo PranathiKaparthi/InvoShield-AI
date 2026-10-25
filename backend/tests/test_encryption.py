@@ -1,4 +1,3 @@
-import pytest
 from app.services.encryption_service import encryption_service
 from app.database.session import SessionLocal, init_db
 from app.models.entities import Invoice

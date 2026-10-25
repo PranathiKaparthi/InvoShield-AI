@@ -69,6 +69,21 @@ VENDOR_STATUS_LABELS = {
 }
 
 
+STAFF_STATUS_LABELS = {
+    "uploaded": "waiting for review",
+    "processing": "waiting for review",
+    "pending_review": "waiting for review",
+    "flagged": "flagged for checking",
+    "pending_verification": "from an unverified sender",
+    "approved": "approved",
+    "rejected": "rejected",
+}
+
+
+def staff_status(invoice: Invoice) -> str:
+    return STAFF_STATUS_LABELS.get(invoice.status or "", invoice.status or "unknown")
+
+
 def vendor_status(invoice: Invoice) -> str:
     return VENDOR_STATUS_LABELS.get(invoice.status or "", "under review")
 

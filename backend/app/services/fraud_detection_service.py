@@ -2,7 +2,24 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Tuple, Optional
 from sqlalchemy.orm import Session
 from app.models.entities import Invoice
-from app.services.encryption_service import encryption_service
+from app.core.config import settings
+from app.utils.money import format_money
+
+def amount_thresholds(currency: Optional[str]) -> Tuple[float, float, float]:
+    """(review threshold, high-value threshold, minimum amount for a spend-spike alert) in the
+    invoice's own currency. Rupee values are configurable because "a big invoice" differs a lot
+    between a corner shop and a factory."""
+    cur = (currency or "USD").upper()
+    if cur == "INR":
+        return (settings.FRAUD_REVIEW_THRESHOLD_INR, settings.FRAUD_HIGH_THRESHOLD_INR,
+                settings.FRAUD_SPIKE_MIN_INR)
+    return (settings.FRAUD_REVIEW_THRESHOLD_DEFAULT, settings.FRAUD_HIGH_THRESHOLD_DEFAULT,
+            settings.FRAUD_SPIKE_MIN_DEFAULT)
+
+
+def _fmt_threshold(value: float, currency: Optional[str]) -> str:
+    return format_money(value, (currency or "USD").upper())
+
 
 class FraudDetectionService:
     """
@@ -26,7 +43,11 @@ class FraudDetectionService:
         inv_number = (invoice_data.get("invoice_number") or "").strip()
         inv_date_str = (invoice_data.get("invoice_date") or "").strip()
         gst_number = (invoice_data.get("gst_number") or "").strip()
-        sym = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£"}.get((invoice_data.get("currency") or "USD").upper(), "$")
+        review_threshold, high_threshold, spike_min = amount_thresholds(invoice_data.get("currency"))
+        currency = invoice_data.get("currency")
+
+        def money(value) -> str:
+            return _fmt_threshold(float(value or 0.0), currency)
 
         # Rule 1: Duplicate Invoice Risk
         if duplicate_score >= 90.0:
@@ -47,7 +68,7 @@ class FraudDetectionService:
             for prior in matching_number_invoices:
                 if abs(float(prior.total_amount or 0.0) - total_amount) > 1.0:
                     risk_score += 40
-                    reasons.append(f"Invoice Number Conflict: Invoice #{inv_number} already exists with a different total ({sym}{prior.total_amount:.2f} vs current {sym}{total_amount:.2f}).")
+                    reasons.append(f"Invoice Number Conflict: Invoice #{inv_number} already exists with a different total ({money(prior.total_amount)} vs current {money(total_amount)}).")
                     break
 
         # Rule 3: Vendor History and Abnormal Amount Analysis
@@ -63,26 +84,26 @@ class FraudDetectionService:
                 amounts = [float(inv.total_amount or 0.0) for inv in vendor_invoices if inv.total_amount]
                 if amounts:
                     avg_vendor_amount = sum(amounts) / len(amounts)
-                    if total_amount > (avg_vendor_amount * 3.0) and total_amount > 1000.0:
+                    if total_amount > (avg_vendor_amount * 3.0) and total_amount > spike_min:
                         risk_score += 35
-                        reasons.append(f"Abnormal Spend Spike: Current amount ({sym}{total_amount:,.2f}) is over 3x higher than vendor '{vendor_name}' average ({sym}{avg_vendor_amount:,.2f}).")
+                        reasons.append(f"Abnormal Spend Spike: Current amount ({money(total_amount)}) is over 3x higher than vendor '{vendor_name}' average ({money(avg_vendor_amount)}).")
                     elif total_amount > (avg_vendor_amount * 2.0):
                         risk_score += 15
-                        reasons.append(f"Elevated Spend: Amount ({sym}{total_amount:,.2f}) is significantly above vendor average ({sym}{avg_vendor_amount:,.2f}).")
+                        reasons.append(f"Elevated Spend: Amount ({money(total_amount)}) is significantly above vendor average ({money(avg_vendor_amount)}).")
 
         # Rule 4: Unusually High Absolute Amount
-        if total_amount > 100000.0:
+        if total_amount > high_threshold:
             risk_score += 30
-            reasons.append(f"High Value Threshold: Single invoice amount ({sym}{total_amount:,.2f}) exceeds the 100,000 high-value review threshold.")
-        elif total_amount > 25000.0:
+            reasons.append(f"High Value Threshold: Single invoice amount ({money(total_amount)}) exceeds the {_fmt_threshold(high_threshold, currency)} high-value review threshold.")
+        elif total_amount > review_threshold:
             risk_score += 15
-            reasons.append(f"Substantial Value: Invoice amount ({sym}{total_amount:,.2f}) exceeds the 25,000 standard review threshold.")
+            reasons.append(f"Substantial Value: Invoice amount ({money(total_amount)}) exceeds the {_fmt_threshold(review_threshold, currency)} standard review threshold.")
 
         # Rule 5: Math Calculation / Tax Anomaly
         expected_total = round(subtotal + tax - discount, 2)
         if abs(expected_total - round(total_amount, 2)) > 0.10:
             risk_score += 25
-            reasons.append(f"Financial Inconsistency: Calculated total ({sym}{expected_total:,.2f}) does not match billed total ({sym}{total_amount:,.2f}).")
+            reasons.append(f"Financial Inconsistency: Calculated total ({money(expected_total)}) does not match billed total ({money(total_amount)}).")
 
         # Rule 6: Future Invoice Date
         if inv_date_str:

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
   FileText,
   CheckCircle2,
@@ -34,7 +34,6 @@ export const InvoiceResultPage: React.FC = () => {
   const [showSensitive, setShowSensitive] = useState<boolean>(false);
 
   const { user, canApprove, isAdmin } = useAuth();
-  const navigate = useNavigate();
 
   const isSelfSubmitted = Boolean(invoice && invoice.user_id && user && invoice.user_id === user.id && !isAdmin);
 
@@ -45,7 +44,7 @@ export const InvoiceResultPage: React.FC = () => {
       const res = await invoicesApi.getById(id);
       setInvoice(res.data);
       setFormData(res.data);
-    } catch (err: any) {
+    } catch {
       setMessage({ text: 'Failed to load invoice details.', type: 'error' });
     } finally {
       setLoading(false);
@@ -83,7 +82,7 @@ export const InvoiceResultPage: React.FC = () => {
       const res = await invoicesApi.revalidate(id);
       setInvoice(res.data);
       setMessage({ text: 'Validation rules re-executed.', type: 'success' });
-    } catch (err: any) {
+    } catch {
       setMessage({ text: 'Revalidation failed.', type: 'error' });
     } finally {
       setSaving(false);
@@ -428,7 +427,7 @@ export const InvoiceResultPage: React.FC = () => {
                   <label className="text-xs font-medium text-gray-700">Subtotal Amount</label>
                   {currency !== 'USD' && (
                     <span className="text-[11px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                      ≈ {formatAmount(formData.subtotal ?? 0)}
+                      ≈ {formatAmount(formData.subtotal ?? 0, 2, formData.currency)}
                     </span>
                   )}
                 </div>
@@ -446,7 +445,7 @@ export const InvoiceResultPage: React.FC = () => {
                   <label className="text-xs font-medium text-gray-700">Tax Amount</label>
                   {currency !== 'USD' && (
                     <span className="text-[11px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                      ≈ {formatAmount(formData.tax_amount ?? 0)}
+                      ≈ {formatAmount(formData.tax_amount ?? 0, 2, formData.currency)}
                     </span>
                   )}
                 </div>
@@ -464,7 +463,7 @@ export const InvoiceResultPage: React.FC = () => {
                   <label className="text-xs font-medium text-gray-700">Discount</label>
                   {currency !== 'USD' && (
                     <span className="text-[11px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                      ≈ {formatAmount(formData.discount ?? 0)}
+                      ≈ {formatAmount(formData.discount ?? 0, 2, formData.currency)}
                     </span>
                   )}
                 </div>
@@ -482,7 +481,7 @@ export const InvoiceResultPage: React.FC = () => {
                   <label className="text-xs font-semibold text-gray-900">Total Amount</label>
                   {currency !== 'USD' && (
                     <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                      ≈ {formatAmount(formData.total_amount ?? 0)}
+                      ≈ {formatAmount(formData.total_amount ?? 0, 2, formData.currency)}
                     </span>
                   )}
                 </div>
@@ -543,8 +542,8 @@ export const InvoiceResultPage: React.FC = () => {
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="py-2 text-gray-800">{itm.description}</td>
                       <td className="py-2 text-right text-gray-600">{itm.quantity}</td>
-                      <td className="py-2 text-right text-gray-600">{formatAmount(itm.unit_price)}</td>
-                      <td className="py-2 text-right font-semibold text-gray-900">{formatAmount(itm.total_price)}</td>
+                      <td className="py-2 text-right text-gray-600">{formatAmount(itm.unit_price, 2, formData.currency)}</td>
+                      <td className="py-2 text-right font-semibold text-gray-900">{formatAmount(itm.total_price, 2, formData.currency)}</td>
                     </tr>
                   ))}
                 </tbody>

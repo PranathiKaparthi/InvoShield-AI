@@ -13,17 +13,17 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.agent import approval
+from app.agent import approval, menu
 from app.agent.delivery import deliver, flush_deferred
-from app.agent.identity import Identity, resolve_identity
-from app.agent.llm import get_provider
+from app.agent.identity import resolve_identity
+from app.agent.llm import OfflineProvider, get_provider
 from app.agent.memory import build_history, get_agent_settings, get_or_create_conversation, record_message
 from app.agent.policies import rate_limiter, wrap_untrusted
 from app.agent.prompts import build_system_prompt
 from app.agent.tools import ToolContext, execute_tool, tool_definitions
 from app.channels import ChannelError, InboundMessage, MediaRef, OutboundMessage, get_channel, is_mock_mode
 from app.core.config import settings
-from app.models.agent_entities import AgentApproval, AgentConversation
+from app.models.agent_entities import AgentApproval, AgentConversation, AgentMessage
 from app.services.invoice_pipeline import process_invoice_upload
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,14 @@ def _reply(db: Session, conv: AgentConversation, text: str, result: HandleResult
     result.replies.append(text)
 
 
+def _last_reply_was_menu(db: Session, conv: AgentConversation, current_inbound_id: int) -> bool:
+    last = db.query(AgentMessage).filter(AgentMessage.conversation_id == conv.id,
+                                         AgentMessage.direction == "outbound",
+                                         AgentMessage.id < current_inbound_id) \
+        .order_by(AgentMessage.id.desc()).first()
+    return bool(last and menu.MENU_MARKER in (last.content or ""))
+
+
 def handle_inbound(db: Session, inbound: InboundMessage) -> HandleResult:
     result = HandleResult()
     if not settings.AGENT_ENABLED:
@@ -159,12 +167,31 @@ def handle_inbound(db: Session, inbound: InboundMessage) -> HandleResult:
             _reply(db, conv, text, result)
             return result
 
+    # ---------------------------------------------------------------- numbered menu (no LLM needed)
+    request_text = inbound.text or ""
+    if not inbound.media and not inbound.subject:
+        if menu.is_greeting(request_text):
+            multilingual = not isinstance(get_provider(), OfflineProvider)
+            _reply(db, conv, menu.build_menu(identity, business, multilingual), result)
+            return result
+        choice = menu.parse_choice(request_text)
+        if choice is not None and _last_reply_was_menu(db, conv, inbound_msg.id):
+            run, ask = menu.resolve_choice(identity, choice)
+            if ask:
+                _reply(db, conv, ask, result)
+                return result
+            if run:
+                request_text = run  # the chosen option, phrased as a normal request
+            else:
+                _reply(db, conv, "Please reply with a number from the list, or type MENU to see it again.", result)
+                return result
+
     # ---------------------------------------------------------------- LLM tool loop
     ctx = ToolContext(db=db, identity=identity, conversation=conv, attachments=attachments)
     tools = tool_definitions(identity)
     system = build_system_prompt(identity, business, [t["name"] for t in tools], org_settings.default_language)
 
-    user_text = wrap_untrusted(inbound.text or "", f"{identity.channel} message from {identity.display_name}")
+    user_text = wrap_untrusted(request_text, f"{identity.channel} message from {identity.display_name}")
     if inbound.subject:
         user_text = wrap_untrusted(f"Subject: {inbound.subject}", "email subject") + "\n" + user_text
     if attachments:

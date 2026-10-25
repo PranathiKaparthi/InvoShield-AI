@@ -1,5 +1,4 @@
-import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -29,9 +28,22 @@ class Settings(BaseSettings):
     S3_USE_SSL: bool = False
     LOCAL_STORAGE_DIR: str = "./storage_data"
 
-    # When True (original behaviour) the extractor fills unreadable fields with sample values for UI
-    # demos. Set False for real businesses. The InvoShield Assistant always uses False.
-    EXTRACTION_DEMO_FALLBACKS: bool = True
+    # When True the extractor fills unreadable fields with sample values (old UI-demo behaviour).
+    # Default False: unreadable fields are left empty and reported as Missing. The assistant always
+    # uses False.
+    EXTRACTION_DEMO_FALLBACKS: bool = False
+
+    # Approximate exchange rates (units per 1 USD) used only to add up mixed-currency dashboard
+    # totals. The web app's currency switcher uses the same values (frontend/src/utils/currency.ts).
+    FX_RATES_PER_USD: Dict[str, float] = {"USD": 1.0, "INR": 83.0, "EUR": 0.92, "GBP": 0.79}
+
+    # Fraud engine amount thresholds, in the invoice's currency.
+    FRAUD_REVIEW_THRESHOLD_DEFAULT: float = 25000.0     # USD/EUR/GBP: "substantial value"
+    FRAUD_HIGH_THRESHOLD_DEFAULT: float = 100000.0      # USD/EUR/GBP: "high value"
+    FRAUD_SPIKE_MIN_DEFAULT: float = 1000.0
+    FRAUD_REVIEW_THRESHOLD_INR: float = 200000.0        # ₹2,00,000
+    FRAUD_HIGH_THRESHOLD_INR: float = 1000000.0         # ₹10,00,000
+    FRAUD_SPIKE_MIN_INR: float = 50000.0
 
     # OCR Settings
     TESSERACT_CMD: Optional[str] = None

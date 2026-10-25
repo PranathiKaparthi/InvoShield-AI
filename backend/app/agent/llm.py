@@ -11,7 +11,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
 
@@ -102,23 +102,91 @@ class ScriptedProvider(LLMProvider):
 
 # ------------------------------------------------------------------------------ Offline
 INVOICE_NO = re.compile(r"\b((?=[A-Z0-9/-]*\d)[A-Z]{2,6}[-/]?[A-Z0-9][A-Z0-9/-]{1,24})\b", re.IGNORECASE)
+LABELLED_NO = re.compile(r"\b(?:invoice|bill|inv)\s*(?:no\.?|number|num|#)?\s*[:#-]?\s*([A-Z0-9/-]*\d[A-Z0-9/-]*)",
+                         re.IGNORECASE)
 ATTACHMENT = re.compile(r"attachment_id=(\S+)")
+
+# Words people actually use, including romanised Hindi/Tamil/Telugu and native scripts.
+KW = {
+    "handoff": r"complain|complaint|dispute|lawyer|legal|human|manager|talk to|speak to|call me|someone from|"
+               r"real person|शिकायत|புகார்|ఫిర్యాదు",
+    "thanks": r"^(?:(?:ok(?:ay)?|k|thanks?|thank you|thx|ty|nandri|nanri|dhanyavad|dhanyawad|shukriya|"
+              r"dhanyavadalu|super|great|fine|done|good|got it|धन्यवाद|நன்றி|ధన్యవాదాలు)\s*)+"
+              r"(?:(?:sir|madam|ji|bro|anna|so much|a lot)\s*)*$",
+    "summary": r"summary|report|today|todays|aaj|inniki|ivvala|सारांश|சுருக்கம்|సారాంశం",
+    "flagged": r"suspicious|fraud|risky|\brisk|flag|doubt|shady|fake|सस्पीशियस|சந்தேக",
+    "duplicate": r"duplicate|double bill|twice|same bill|repeat",
+    "copy": r"\bcopy\b|\bpdf\b|resend|send (me|it|again|the bill|the invoice)|bhejo|bhej do|anuppu|pampu|pampandi",
+    "approve": r"\bapprove|\bpass (it|the)|\bok kar",
+    "reject": r"\breject|\bcancel (the )?(invoice|bill)",
+    "paid_action": r"mark(ed)? (it |as )?paid|paid mark|set (as )?paid",
+    "payment": r"\bpaid\b|payment|\bpay\b|paisa|paise|panam|dabbu|kab milega|money|eppo|eppudu|when will|"
+               r"पैसा|भुगतान|பணம்|கட்டணம்|చెల్లింపు|డబ్బు",
+    "pending": r"pending|waiting|to review|review queue|baaki|baki",
+    "bills": r"\bbills?\b|\binvoices?\b|status|update|received|\bgot\b|reached|\bmila\b|aaya|vandhucha|vanthucha|"
+             r"kidaichucha|vachinda|andinda|बिल|स्थिति|பில்|நிலை|బిల్|స్థితి",
+}
+OWE_PATTERNS = [
+    r"(?:how much (?:do )?(?:i|we) owe(?: to)?|owe(?: to)?|owed to)\s+(.+)",
+    r"(?:balance|dues?|outstanding|pending (?:amount|payment))\s+(?:of|for|to|with)\s+(.+)",
+    r"(.+?)\s+(?:balance|dues|outstanding)$",
+    r"(.+?)\s+(?:ko )?kitna dena(?: hai)?$",
+    r"kitna dena(?: hai)?\s+(.+)",
+]
 
 
 def _last_user_text(messages: List[Dict[str, Any]]) -> str:
-    msg = messages[-1]
-    content = msg["content"]
-    if isinstance(content, str):
-        return content
-    return "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
+    for msg in reversed(messages):
+        if msg["role"] != "user":
+            continue
+        content = msg["content"]
+        if isinstance(content, str):
+            return content
+        texts = [b.get("text", "") for b in content if b.get("type") == "text"]
+        if texts:
+            return "\n".join(texts)
+    return ""
+
+
+def _previous_assistant_text(messages: List[Dict[str, Any]]) -> str:
+    if len(messages) >= 2 and messages[-2]["role"] == "assistant" and isinstance(messages[-2]["content"], str):
+        return messages[-2]["content"]
+    return ""
 
 
 def _strip_wrappers(text: str) -> str:
-    return re.sub(r"</?untrusted_content[^>]*>", " ", text)
+    text = re.sub(r"<untrusted_content[^>]*>\s*", "", text)
+    text = text.replace("</untrusted_content>", "")
+    return text.split("\nAttachments:")[0].split("\nAttachment problems")[0]
+
+
+def _latest_message_body(raw: str) -> str:
+    """The text of the newest message only (history may be merged into the same user turn)."""
+    blocks = re.findall(r"<untrusted_content[^>]*>\n?(.*?)\n?</untrusted_content>", raw, re.S)
+    return (blocks[-1] if blocks else _strip_wrappers(raw)).strip()
+
+
+def _invoice_number(text: str) -> Optional[str]:
+    m = LABELLED_NO.search(text)
+    if m:
+        return m.group(1)
+    for cand in INVOICE_NO.findall(text):
+        if not cand.lower().startswith(("http", "untrusted")):
+            return cand
+    return None
+
+
+def _count(n: int, word: str = "invoice") -> str:
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def _clean_reason(reason: str) -> str:
+    return reason.split(": ", 1)[-1].rstrip(".")
 
 
 class OfflineProvider(LLMProvider):
-    """A small rule-based stand-in for the model (English only). Good enough to demo every tool."""
+    """A small rule-based stand-in for the model. Understands common English, Hinglish/Tanglish and
+    a few native-script words; always answers in simple English. Good enough to demo every tool."""
     name = "offline"
 
     def complete(self, system, messages, tools) -> LLMResponse:
@@ -126,63 +194,102 @@ class OfflineProvider(LLMProvider):
         last = messages[-1]
         if isinstance(last["content"], list) and any(b.get("type") == "tool_result" for b in last["content"]):
             return make_response(self._render(messages))
-        text = _last_user_text(messages)
-        call = self._route(text, allowed)
+        call = self._route(messages, allowed)
         if isinstance(call, str):
             return make_response(call)
         return make_response(tool_calls=call)
 
     # ---- intent routing
-    def _route(self, raw: str, allowed: set):
+    def _route(self, messages, allowed: set):
+        from app.agent import menu  # local import keeps llm.py free of agent-package cycles
+
         def tc(name, args):
             return ToolCall(id=f"offline_{uuid.uuid4().hex[:8]}", name=name, input=args)
-
-        attachments = ATTACHMENT.findall(raw)
-        if attachments and "ingest_invoice" in allowed:
-            return [tc("ingest_invoice", {"attachment_id": a}) for a in attachments]
-
-        body = _strip_wrappers(raw).split("Attachments:")[0]
-        t = " ".join(body.lower().split())
-        numbers = [m for m in INVOICE_NO.findall(body) if not m.lower().startswith(("http", "untrusted"))]
-        number = numbers[0] if numbers else None
 
         def can(name):
             return name in allowed
 
-        if re.search(r"\b(complain|complaint|dispute|lawyer|legal|human|manager|talk to someone)\b", t) and can("handoff_to_human"):
+        raw = messages[-1]["content"] if isinstance(messages[-1]["content"], str) else _last_user_text(messages)
+        attachments = ATTACHMENT.findall(raw.split("\nAttachments:")[-1]) if "\nAttachments:" in raw else []
+        if attachments and can("ingest_invoice"):
+            return [tc("ingest_invoice", {"attachment_id": a}) for a in attachments]
+
+        body = _latest_message_body(raw)
+        t = " ".join(body.lower().split()).strip(" ?!.")
+        number = _invoice_number(body)
+        prev = _previous_assistant_text(messages)
+
+        def has(key):
+            return re.search(KW[key], t) is not None
+
+        # ---- answers to a question the assistant just asked
+        if prev and t:
+            if menu.ASK_COPY in prev and can("send_document_copy"):
+                return [tc("send_document_copy", {"invoice_number": number or body.strip()[:100]})]
+            if menu.ASK_STATUS in prev and can("get_invoice_status"):
+                return [tc("get_invoice_status", {"invoice_number": number or body.strip()[:100]})]
+            if menu.ASK_TEAM in prev and can("handoff_to_human"):
+                return [tc("handoff_to_human", {"reason": "Message for the team", "summary": body.strip()[:1000]})]
+            if (menu.ASK_VENDOR in prev or "Which vendor do you mean" in prev) and can("get_vendor_balance"):
+                return [tc("get_vendor_balance", {"vendor_name": body.strip()[:255]})]
+            m = re.search(r"Did you mean (.+?)\?", prev)
+            if m and re.fullmatch(r"(yes|y|yeah|yep|haan|ha|aama|avunu|correct|right)", t) and can("get_vendor_balance"):
+                return [tc("get_vendor_balance", {"vendor_name": m.group(1).split(", ")[0]})]
+
+        if not t:
+            return "Please type your question, or reply MENU to see what I can do."
+        if re.search(KW["thanks"], t):
+            return "You're welcome! Reply MENU anytime to see what I can do."
+        if has("handoff") and can("handoff_to_human"):
             return [tc("handoff_to_human", {"reason": "Sender asked for a person", "summary": body.strip()[:500]})]
-        if "summary" in t and can("get_daily_summary"):
-            return [tc("get_daily_summary", {})]
-        if re.search(r"suspicious|flagged|fraud|risky|risk", t) and can("list_flagged_invoices"):
-            return [tc("list_flagged_invoices", {})]
-        if "duplicate" in t and can("list_duplicates"):
-            return [tc("list_duplicates", {})]
-        m = re.search(r"\b(?:owe|owed to|balance (?:for|of|with)|outstanding (?:for|to|with))\s+(.+?)[\s?.!]*$", t)
-        if m and can("get_vendor_balance"):
-            return [tc("get_vendor_balance", {"vendor_name": m.group(1).strip()})]
-        if number and re.search(r"\bapprove\b", t) and can("request_invoice_action"):
+
+        # ---- actions on one invoice (need an invoice number)
+        if number and has("approve") and can("request_invoice_action"):
             return [tc("request_invoice_action", {"invoice_number": number, "action": "approve"})]
-        if number and re.search(r"\breject\b", t) and can("request_invoice_action"):
-            reason = re.split(r"\bbecause\b", body, maxsplit=1, flags=re.IGNORECASE)
+        if number and has("reject") and can("request_invoice_action"):
             args = {"invoice_number": number, "action": "reject"}
-            if len(reason) > 1:
-                args["reason"] = reason[1].strip()[:500]
+            reason = re.split(r"\bbecause\b|\breason\b|\bas\b", body, maxsplit=1, flags=re.IGNORECASE)
+            if len(reason) > 1 and reason[1].strip(" :"):
+                args["reason"] = reason[1].strip(" :")[:500]
             return [tc("request_invoice_action", args)]
-        if number and re.search(r"mark(ed)? .*paid|\bpaid\b.*\bmark", t) and can("request_invoice_action"):
+        if number and has("paid_action") and can("request_invoice_action"):
             return [tc("request_invoice_action", {"invoice_number": number, "action": "mark_paid"})]
-        if number and re.search(r"\b(copy|resend|send me)\b", t) and can("send_document_copy"):
+        if number and has("copy") and can("send_document_copy"):
             return [tc("send_document_copy", {"invoice_number": number})]
+        if (has("approve") or has("reject")) and not number and can("request_invoice_action"):
+            return menu.ASK_ACTION
+
+        # ---- owner questions
+        if has("summary") and can("get_daily_summary"):
+            return [tc("get_daily_summary", {})]
+        if has("flagged") and can("list_flagged_invoices"):
+            return [tc("list_flagged_invoices", {})]
+        if has("duplicate") and not number and can("list_duplicates"):
+            return [tc("list_duplicates", {})]
+        if can("get_vendor_balance"):
+            for pat in OWE_PATTERNS:
+                m = re.search(pat, t)
+                if m:
+                    name = re.sub(r"^(to|the|for)\s+", "", m.group(1)).strip(" ?.")
+                    if name and name not in ("i", "we", "me"):
+                        return [tc("get_vendor_balance", {"vendor_name": name})]
+            if re.search(r"\b(owe|balance|dues|outstanding|kitna dena)\b", t):
+                return menu.ASK_VENDOR
+
+        # ---- one invoice / my invoices
         if number and can("get_invoice_status"):
             return [tc("get_invoice_status", {"invoice_number": number})]
-        if re.search(r"\b(status|bill|bills|invoice|invoices|paid|payment|received|get my|pending)\b", t) and can("list_my_invoices"):
-            status = "pending" if "pending" in t else "all"
-            return [tc("list_my_invoices", {"status": status})]
-        if re.search(r"\b(hi|hello|hey|namaste|vanakkam|good (morning|evening))\b", t):
-            return "Hello! You can send an invoice here as a PDF or photo, or ask me about an invoice's status."
+        if has("copy") and can("send_document_copy"):
+            return menu.ASK_COPY
+        if has("pending") and can("list_my_invoices"):
+            return [tc("list_my_invoices", {"status": "pending"})]
+        if (has("payment") or has("bills")) and can("list_my_invoices"):
+            return [tc("list_my_invoices", {"status": "all"})]
+
         if not allowed:
             return "Sorry, I can't help with that here."
-        return ("I can help with invoices: send one as a PDF or photo, ask for the status of an invoice "
-                "number, or ask about your bills. For anything else I can pass you to the team.")
+        return ("Sorry, I didn't catch that. Reply MENU to see what I can do, or send an invoice as a PDF "
+                "or photo.")
 
     # ---- rendering tool results
     def _render(self, messages) -> str:
@@ -192,6 +299,7 @@ class OfflineProvider(LLMProvider):
                 for b in m["content"]:
                     if b.get("type") == "tool_use":
                         names[b["id"]] = b["name"]
+        asked = " ".join(_latest_message_body(_last_user_text(messages)).lower().split())
         parts = []
         for block in messages[-1]["content"]:
             if block.get("type") != "tool_result":
@@ -200,90 +308,133 @@ class OfflineProvider(LLMProvider):
                 data = json.loads(block.get("content") or "{}")
             except (TypeError, ValueError):
                 data = {}
-            parts.append(self._render_one(names.get(block.get("tool_use_id"), ""), data))
+            parts.append(self._render_one(names.get(block.get("tool_use_id"), ""), data, asked))
         return "\n\n".join(p for p in parts if p)
 
     @staticmethod
-    def _inv_line(i: Dict[str, Any]) -> str:
-        bits = [i.get("invoice_number") or "(no number)", i.get("amount", "")]
-        if i.get("vendor_name") and "risk_level" in i:
-            bits.insert(1, i["vendor_name"])
+    def _status_text(i: Dict[str, Any]) -> str:
         status = i.get("status", "")
         if i.get("payment_status") == "paid":
-            status += ", paid"
-        return " - ".join(b for b in bits if b) + f" ({status})"
+            return "paid"
+        if status == "approved":
+            return "approved, payment pending"
+        return status
 
-    def _render_one(self, name: str, d: Dict[str, Any]) -> str:
+    def _inv_line(self, i: Dict[str, Any], with_vendor: bool = False) -> str:
+        bits = [i.get("invoice_number") or "(no number)"]
+        if with_vendor and i.get("vendor_name"):
+            bits.append(i["vendor_name"])
+        bits.append(i.get("amount", ""))
+        bits.append(self._status_text(i))
+        return "• " + " · ".join(b for b in bits if b)
+
+    def _render_one(self, name: str, d: Dict[str, Any], asked: str = "") -> str:
+        staff = lambda inv: "risk_level" in inv  # noqa: E731  (staff views carry risk info)
         if d.get("error") == "not_permitted":
-            return "Sorry, I can't do that for you."
+            return "Sorry, I can't do that for you. Reply MENU to see what I can help with."
         if d.get("error"):
-            return f"Sorry: {d.get('message') or d['error']}"
+            return f"Sorry, {(d.get('message') or d['error']).rstrip('.')}."
         if d.get("ambiguous"):
             cands = d.get("candidates", [])
             labels = [c if isinstance(c, str) else c.get("invoice_number") or "?" for c in cands]
+            if name == "get_vendor_balance":
+                return "Which vendor do you mean: " + ", ".join(labels) + "?"
             return "Which one do you mean: " + ", ".join(labels) + "?"
+
         if name == "ingest_invoice":
             inv = d.get("invoice", {})
-            msg = f"Received invoice {inv.get('invoice_number') or '(number unclear)'} for {inv.get('amount')}."
+            lines = [f"Thank you! Received invoice {inv.get('invoice_number') or '(number not readable)'} "
+                     f"for {inv.get('amount')}."]
             probs = inv.get("problems_found") or []
             if probs:
-                msg += " Please check: " + "; ".join(p.rstrip(". ") for p in probs[:3]) + "."
+                lines.append("Please check: " + "; ".join(p.rstrip(". ") for p in probs[:3]) + ".")
+                lines.append("If needed, send a corrected copy here.")
+            if inv.get("note"):
+                lines.append(inv["note"])
+            if staff(inv):
+                lines.append(f"Risk: {inv.get('risk_level')}. Duplicate check: {inv.get('duplicate_status')}.")
             else:
-                msg += f" Status: {inv.get('status')}."
-            if inv.get("risk_level"):
-                msg += f" Risk: {inv['risk_level']}, duplicates: {inv.get('duplicate_status')}."
-            return msg
+                lines.append("We'll update you here once it has been reviewed.")
+            return "\n".join(lines)
+
         if name == "get_invoice_status":
             if not d.get("found"):
-                return "I couldn't find an invoice with that number for you."
+                return "I couldn't find an invoice with that number for you. Please check the number and try again."
             lines = []
             for i in d["invoices"]:
-                line = self._inv_line(i)
+                line = self._inv_line(i, with_vendor=staff(i))
                 if i.get("approved_on"):
-                    line += f", approved on {i['approved_on']}"
-                if i.get("risk_reasons"):
-                    line += ". Flags: " + "; ".join(i["risk_reasons"][:2])
+                    line += f" (approved on {i['approved_on']})"
                 lines.append(line)
+                if i.get("risk_reasons"):
+                    lines.append("  Reason to check: " + "; ".join(_clean_reason(r) for r in i["risk_reasons"][:2]))
             return "\n".join(lines)
+
         if name == "list_my_invoices":
             if not d.get("total"):
-                return "I don't see any invoices for that."
-            head = f"{d['total']} invoice(s)" + (f", latest {d['showing']}:" if d["total"] > d["showing"] else ":")
-            return head + "\n" + "\n".join(self._inv_line(i) for i in d["invoices"])
+                return "I don't see any invoices for that yet."
+            invs = d["invoices"]
+            is_staff = any(staff(i) for i in invs)
+            head = (_count(d['total']) if is_staff else f"You have {_count(d['total'])} with us") + (
+                f", latest {d['showing']}:" if d["total"] > d["showing"] else ":")
+            lines = [head] + [self._inv_line(i, with_vendor=is_staff) for i in invs]
+            if not is_staff and re.search(KW["payment"], asked):
+                lines.append("I can't give a payment date, but you'll get a message here as soon as an "
+                             "invoice is marked paid.")
+            return "\n".join(lines)
+
         if name == "get_vendor_balance":
             if not d.get("found"):
                 closest = d.get("closest") or []
                 return "I couldn't find that vendor." + (f" Did you mean {', '.join(closest)}?" if closest else "")
-            return (f"{d['vendor_name']}: you owe {', '.join(d['approved_unpaid_total'])} across "
-                    f"{d['approved_unpaid_count']} approved unpaid invoice(s). Another "
-                    f"{', '.join(d['under_review_total'])} ({d['under_review_count']} invoice(s)) is still under review.")
+            owed = ", ".join(d["approved_unpaid_total"])
+            review = ", ".join(d["under_review_total"])
+            if d["approved_unpaid_count"]:
+                text = (f"You owe {d['vendor_name']} {owed} "
+                        f"({_count(d['approved_unpaid_count'], 'approved invoice')} not paid yet).")
+            else:
+                text = f"Nothing approved is unpaid for {d['vendor_name']} right now."
+            if d["under_review_count"]:
+                text += f" Another {review} ({_count(d['under_review_count'])}) is still waiting for review."
+            return text
+
         if name == "list_flagged_invoices":
             if not d.get("total"):
-                return "No suspicious invoices in that period."
-            lines = [f"{d['total']} flagged invoice(s):"]
+                return "Good news: no suspicious invoices in the last 7 days."
+            lines = [f"{_count(d['total'])} " + ("needs" if d['total'] == 1 else "need") + " a closer look:"]
             for i in d["invoices"][:5]:
-                lines.append(f"- {self._inv_line(i)}: " + "; ".join(i.get("reasons", [])[:2]))
+                lines.append(self._inv_line(i, with_vendor=True))
+                if i.get("reasons"):
+                    lines.append("  Why: " + "; ".join(_clean_reason(r) for r in i["reasons"][:2]))
+            lines.append("Reply \"approve <number>\" or \"reject <number> because ...\" to act on one.")
             return "\n".join(lines)
+
         if name == "list_duplicates":
             if not d.get("count"):
-                return "No likely duplicates found recently."
-            return "Possible duplicates:\n" + "\n".join(
-                f"- {x.get('invoice_number')} matches {x.get('matches_invoice')} ({x.get('similarity_percent')}%)"
-                for x in d["duplicates"][:5])
+                return "No likely duplicate invoices in the last 30 days."
+            lines = ["Possible duplicates:"] + [
+                f"• {x.get('invoice_number')} looks like {x.get('matches_invoice')} ({x.get('similarity_percent')}% similar)"
+                for x in d["duplicates"][:5]]
+            return "\n".join(lines)
+
         if name == "get_daily_summary":
             top = ", ".join(f"{v['vendor']} {v['amount']}" for v in d.get("top_vendors", [])) or "none"
-            return (f"Summary for {d['date']}: {d['received']} received ({', '.join(d['received_value'])}), "
-                    f"{d['approved']} approved, {d['flagged']} flagged. Top vendors: {top}. "
-                    f"{d['waiting_for_review_overall']} waiting for review overall.")
+            return (f"Summary for {d['date']}:\n"
+                    f"• Received: {_count(d['received'])}, {', '.join(d['received_value'])}\n"
+                    f"• Approved: {d['approved']}\n"
+                    f"• Flagged: {d['flagged']}\n"
+                    f"• Top vendors: {top}\n"
+                    f"• Waiting for review overall: {d['waiting_for_review_overall']}")
+
         if name == "request_invoice_action":
             inv = d.get("invoice", {})
-            verb = {"approve": "approve", "reject": "reject", "mark_paid": "mark as paid"}.get(d.get("action"), d.get("action"))
+            verb = {"approve": "Approve", "reject": "Reject", "mark_paid": "Mark as paid"}.get(d.get("action"), d.get("action"))
             return (f"Please confirm: {verb} invoice {inv.get('invoice_number')} from {inv.get('vendor_name')} "
-                    f"for {inv.get('amount')}? Reply YES to confirm or NO to cancel.")
+                    f"for {inv.get('amount')}?\nReply YES to confirm or NO to cancel.")
         if name == "draft_reply":
-            return f"Draft to {d.get('recipient')} saved. It will be sent after approval in the Assistant Inbox."
+            return f"Draft to {d.get('recipient')} saved. It will be sent after you approve it in the Assistant Inbox."
         if name == "send_document_copy":
-            return "Your request is noted. The copy will be sent once the team approves it."
+            return "Your request is noted. The copy will be sent here once the team approves it."
         if name == "handoff_to_human":
             return "I've passed this to the team. Someone will get back to you soon."
         return json.dumps(d)[:500]

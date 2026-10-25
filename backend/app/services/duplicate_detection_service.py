@@ -1,5 +1,4 @@
-import json
-from typing import List, Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional
 from rapidfuzz import fuzz
 from sqlalchemy.orm import Session
 from app.models.entities import Invoice

@@ -7,6 +7,10 @@ sys.path.insert(0, backend_dir)
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.database.session import init_db
+
+# Create tables and development seed users (a fresh clone has no database file).
+init_db()
 
 client = TestClient(app)
 

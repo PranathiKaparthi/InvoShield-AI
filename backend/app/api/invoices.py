@@ -1,6 +1,7 @@
 import json
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+import mimetypes
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
@@ -9,20 +10,28 @@ from app.database.session import get_db
 from app.api.deps import get_current_user, require_role
 from app.models.entities import User, Invoice, InvoiceItem, ValidationResult, DuplicateCheck, FraudAlert, AuditLog
 from app.schemas.schemas import (
-    InvoiceResponse, InvoiceDetailResponse, InvoiceUpdate,
-    ValidationResultResponse, DuplicateCheckResponse, FraudAlertResponse
+    InvoiceResponse, InvoiceDetailResponse, InvoiceUpdate
 )
 from app.services.cloud_storage_service import cloud_storage_service
-from app.services.ocr_service import ocr_service
-from app.services.invoice_extraction_service import invoice_extraction_service
 from app.services.validation_service import validation_service
-from app.services.duplicate_detection_service import duplicate_detection_service
-from app.services.fraud_detection_service import fraud_detection_service
 from app.services.encryption_service import encryption_service
 from app.services.invoice_pipeline import process_invoice_upload
 from app.services import invoice_actions
 
 router = APIRouter(prefix="/api/invoices", tags=["Invoices"])
+
+def load_invoice_for_user(db: Session, invoice_id: int, user: User) -> Invoice:
+    """Fetch an invoice the user is allowed to see, else 404 (never reveal other tenants' invoices).
+    admin: any invoice; reviewer: own organization; user: invoices they uploaded."""
+    query = db.query(Invoice).filter(Invoice.id == invoice_id)
+    if user.role == "user":
+        query = query.filter(Invoice.user_id == user.id)
+    elif user.role == "reviewer":
+        query = query.filter(Invoice.organization == (user.organization or "General"))
+    invoice = query.first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    return invoice
 
 def format_invoice_response(invoice: Invoice) -> dict:
     """Helper to decrypt sensitive fields before presenting in response."""
@@ -210,12 +219,7 @@ def get_invoice(
     db: Session = Depends(get_db)
 ):
     """Get complete invoice details, line items, validation history, duplicate checks, fraud alerts, and audit trail."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
-
-    if current_user.role == "user" and invoice.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied to this invoice.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
 
     return format_invoice_detail(invoice)
 
@@ -227,9 +231,7 @@ def update_invoice(
     db: Session = Depends(get_db)
 ):
     """Inline editing of extracted invoice fields with automatic re-encryption of sensitive fields."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
 
     update_dict = invoice_update.model_dump(exclude_unset=True)
     items_data = update_dict.pop("items", None)
@@ -277,9 +279,7 @@ def revalidate_invoice(
     db: Session = Depends(get_db)
 ):
     """Re-run data validation on the invoice."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
 
     decrypted_data = format_invoice_response(invoice)
     validation_items, val_status = validation_service.validate(decrypted_data)
@@ -317,9 +317,7 @@ def approve_invoice(
     db: Session = Depends(get_db)
 ):
     """Role-based approval: Reviewer or Admin only (SoD enforced in invoice_actions)."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
     try:
         invoice = invoice_actions.approve_invoice(db, invoice, current_user)
     except invoice_actions.InvoiceActionError as e:
@@ -333,9 +331,7 @@ def reject_invoice(
     db: Session = Depends(get_db)
 ):
     """Role-based rejection: Reviewer or Admin only."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
     try:
         invoice = invoice_actions.reject_invoice(db, invoice, current_user)
     except invoice_actions.InvoiceActionError as e:
@@ -349,9 +345,7 @@ def mark_invoice_paid(
     db: Session = Depends(get_db)
 ):
     """Mark an approved invoice as paid (used by the assistant's balance and vendor status answers)."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
     try:
         invoice = invoice_actions.mark_invoice_paid(db, invoice, current_user)
     except invoice_actions.InvoiceActionError as e:
@@ -365,9 +359,7 @@ def get_invoice_duplicates(
     db: Session = Depends(get_db)
 ):
     """Get duplicate comparison details, matched invoice, similarity score, and field matching breakdown."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
 
     dup_check = db.query(DuplicateCheck).filter(DuplicateCheck.invoice_id == invoice_id).first()
     matched_invoice = None
@@ -399,9 +391,7 @@ def get_invoice_risk_analysis(
     db: Session = Depends(get_db)
 ):
     """Get risk score, risk level, and plain-language alert reasons."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
 
     alerts = db.query(FraudAlert).filter(FraudAlert.invoice_id == invoice_id).all()
     reasons = [a.alert_reason for a in alerts]
@@ -435,14 +425,12 @@ def get_invoice_file(
     db: Session = Depends(get_db)
 ):
     """Serve invoice file for preview."""
-    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found.")
+    invoice = load_invoice_for_user(db, invoice_id, current_user)
 
     try:
         content = cloud_storage_service.get_file(invoice.cloud_file_path)
         filename = invoice.original_filename or "document.pdf"
-        media_type = "application/pdf" if filename.lower().endswith(".pdf") else "image/png"
+        media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         return Response(content=content, media_type=media_type)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")

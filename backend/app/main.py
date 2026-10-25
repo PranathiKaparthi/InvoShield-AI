@@ -39,7 +39,8 @@ app = FastAPI(
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    # "*" is a development convenience only; production uses the explicit origin list.
+    allow_origins=[o for o in settings.CORS_ORIGINS if not (settings.is_production and o == "*")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,7 +79,7 @@ def health_check():
     """Health check endpoint verifying DB connection and storage state."""
     db_ok = True
     try:
-        with engine.connect() as conn:
+        with engine.connect():
             pass
     except Exception:
         db_ok = False

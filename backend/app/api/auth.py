@@ -21,15 +21,22 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
             detail="A user with this email address already exists."
         )
     
-    # Restrict direct registration of admin role unless first user
+    # Self-registration can never create an admin. A reviewer can only be self-registered as the
+    # first account of a NEW organization; joining an existing organization always starts as
+    # "user" (an admin promotes them), otherwise anyone could register as a reviewer of another
+    # company and read or approve its invoices.
+    organization = (user_in.organization or "General").strip() or "General"
+    org_exists = db.query(User.id).filter(func.lower(User.organization) == organization.lower()).first() is not None
     role = user_in.role if user_in.role in ["reviewer", "user"] else "user"
-    
+    if org_exists:
+        role = "user"
+
     new_user = User(
         name=user_in.name.strip() if user_in.name else "User",
         email=email_clean,
         password_hash=get_password_hash(user_in.password),
         role=role,
-        organization=user_in.organization or "General"
+        organization=organization
     )
     db.add(new_user)
     db.commit()

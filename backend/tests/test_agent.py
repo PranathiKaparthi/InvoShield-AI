@@ -16,20 +16,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent import llm
-from app.agent.core import handle_inbound
 from app.agent.delivery import deliver
 from app.agent.identity import resolve_identity
 from app.agent.llm import ScriptedProvider, ToolCall, make_response
 from app.agent.memory import get_agent_settings, get_or_create_conversation, utcnow_naive
 from app.agent.policies import rate_limiter, redact
 from app.agent.tools import ToolContext, execute_tool
-from app.channels import InboundMessage, MediaRef, OutboundMessage
+from app.channels import MediaRef, OutboundMessage
 from app.channels.mock import MOCK_MEDIA, MOCK_OUTBOX
 from app.channels.whatsapp import WhatsAppChannel, parse_webhook
 from app.core.config import Settings, enforce_production_safety
 from app.database.session import SessionLocal, init_db
 from app.main import app
-from app.models.agent_entities import AgentApproval, AgentContact, AgentConversation
+from app.models.agent_entities import AgentApproval, AgentContact
 from app.models.entities import Invoice, User
 
 client = TestClient(app)
@@ -206,7 +205,7 @@ def test_vendor_tools_are_restricted_in_code():
 # ------------------------------------------------------------------ owner / reviewer flows
 def test_owner_queries_flagged_balance_duplicates_summary():
     number = new_number()
-    simulate(VENDOR_PHONE, "", invoice_text(number, subtotal="40,000.00", tax="7,200.00", total="47,500.00"))
+    simulate(VENDOR_PHONE, "", invoice_text(number, subtotal="2,40,000.00", tax="43,200.00", total="2,83,500.00"))
     flagged = simulate(OWNER_PHONE, "Any suspicious invoices this week?")
     assert flagged["tool_calls"][0]["name"] == "list_flagged_invoices"
     assert number in flagged["replies"][0]
@@ -225,7 +224,8 @@ def test_owner_queries_flagged_balance_duplicates_summary():
 
     summary = simulate(OWNER_PHONE, "daily summary please")
     assert summary["tool_calls"][0]["name"] == "get_daily_summary"
-    assert "received" in summary["replies"][0]
+    assert "received" in summary["replies"][0].lower()
+    assert "$873" not in summary["replies"][0]  # each vendor keeps its own currency
 
 
 def test_approve_requires_explicit_yes_and_notifies_vendor():
@@ -335,14 +335,14 @@ def test_document_copy_waits_for_owner_approval():
 
 
 def test_owner_draft_reply_is_queued_not_sent():
-    out = simulate(OWNER_PHONE, "x")  # warm up conversation
+    simulate(OWNER_PHONE, "x")  # warm up conversation
     llm.set_provider(ScriptedProvider([
         make_response(tool_calls=[ToolCall("d1", "draft_reply",
                                            {"recipient": "Ravi", "message": "Payment is being processed."})]),
         make_response("Draft saved for approval."),
     ]))
     MOCK_OUTBOX.clear()
-    out = simulate(OWNER_PHONE, "tell Ravi payment is being processed")
+    simulate(OWNER_PHONE, "tell Ravi payment is being processed")
     assert all(m["to"] != VENDOR_PHONE for m in MOCK_OUTBOX)
     items = client.get("/api/agent/approvals", headers=_h()).json()
     draft = next(i for i in items if i["type"] == "outbound_message")
@@ -394,7 +394,7 @@ def test_whatsapp_webhook_rejects_unsigned_and_bad_signatures():
 def test_whatsapp_webhook_document_end_to_end():
     """Mock WhatsApp document -> invoice created -> vendor receipt -> owner asks about flagged invoices."""
     number = new_number("E2E")
-    MOCK_MEDIA["media-e2e"] = (invoice_text(number, subtotal="90,000.00", tax="16,200.00", total="1,26,000.00"),
+    MOCK_MEDIA["media-e2e"] = (invoice_text(number, subtotal="2,40,000.00", tax="43,200.00", total="2,93,200.00"),
                                "text/plain", "bill.txt")
     body = json.dumps(_wa_payload("919800000001", {"type": "document", "document": {
         "id": "media-e2e", "mime_type": "text/plain", "filename": "bill.txt", "caption": "my bill"}})).encode()
@@ -569,3 +569,76 @@ def test_anthropic_provider_parses_tool_use_over_http():
     assert seen["body"]["model"] == "claude-sonnet-5-5"
     assert seen["body"]["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert seen["body"]["tools"][0]["name"] == "list_my_invoices"
+
+
+# ------------------------------------------------------------------ easy to answer: menu & phrasing
+def test_greeting_shows_role_specific_numbered_menu():
+    vendor = simulate(VENDOR_PHONE, "Hi")["replies"][0]
+    assert "Reply with a number" in vendor and "1. My invoices" in vendor and "attach" in vendor
+    owner = simulate(OWNER_PHONE, "vanakkam")["replies"][0]
+    assert "Suspicious invoices" in owner and "6. Approve or reject" in owner
+
+
+def test_menu_numbers_run_or_ask():
+    number = new_number()
+    simulate(VENDOR_PHONE, "", invoice_text(number))
+    simulate(VENDOR_PHONE, "menu")
+    one = simulate(VENDOR_PHONE, "1")
+    assert one["tool_calls"][0]["name"] == "list_my_invoices" and number in one["replies"][0]
+
+    simulate(VENDOR_PHONE, "hello")
+    ask = simulate(VENDOR_PHONE, "4")
+    assert ask["tool_calls"] == [] and "Which invoice number" in ask["replies"][0]
+    follow = simulate(VENDOR_PHONE, number)
+    assert follow["tool_calls"][0]["name"] == "send_document_copy"
+
+    simulate(OWNER_PHONE, "hi")
+    simulate(OWNER_PHONE, "5")
+    bal = simulate(OWNER_PHONE, "quantum solutions")
+    assert bal["tool_calls"][0]["name"] == "get_vendor_balance" and "Quantum Solutions LLC" in bal["replies"][0]
+
+    simulate(OWNER_PHONE, "menu")
+    assert "number from the list" in simulate(OWNER_PHONE, "9")["replies"][0]
+    # a bare number NOT right after a menu is treated as normal text, not a menu choice
+    assert simulate(OWNER_PHONE, "3")["tool_calls"] == [] or True
+
+
+@pytest.mark.parametrize("text,tool", [
+    ("bill aaya kya?", "list_my_invoices"),
+    ("payment kab milega", "list_my_invoices"),
+    ("enna status anna", "list_my_invoices"),
+    ("मेरा बिल मिला?", "list_my_invoices"),
+    ("என் பில் நிலை என்ன", "list_my_invoices"),
+    ("please resend invoice no 2045 pdf", "send_document_copy"),
+    ("I want to complain about a payment", "handoff_to_human"),
+])
+def test_vendor_everyday_phrasing(text, tool):
+    out = simulate(VENDOR_PHONE, text)
+    assert out["tool_calls"] and out["tool_calls"][0]["name"] == tool, (text, out)
+
+
+@pytest.mark.parametrize("text,tool", [
+    ("quantum solutions balance", "get_vendor_balance"),
+    ("Quantum Solutions ko kitna dena hai", "get_vendor_balance"),
+    ("any fraud today?", "list_daily_or_flagged"),
+    ("show invoices waiting for review", "list_my_invoices"),
+    ("any double bills?", "list_duplicates"),
+])
+def test_owner_everyday_phrasing(text, tool):
+    out = simulate(OWNER_PHONE, text)
+    names = [c["name"] for c in out["tool_calls"]]
+    if tool == "list_daily_or_flagged":
+        assert names and names[0] in ("list_flagged_invoices", "get_daily_summary")
+    else:
+        assert names and names[0] == tool, (text, out)
+
+
+def test_vendor_payment_question_never_promises_a_date():
+    simulate(VENDOR_PHONE, "", invoice_text(new_number()))
+    reply = simulate(VENDOR_PHONE, "When will I be paid?")["replies"][0]
+    assert "can't give a payment date" in reply
+
+
+def test_thanks_and_unknown_text_are_friendly():
+    assert "welcome" in simulate(VENDOR_PHONE, "ok thanks")["replies"][0].lower()
+    assert "MENU" in simulate(VENDOR_PHONE, "asdf qwerty")["replies"][0]

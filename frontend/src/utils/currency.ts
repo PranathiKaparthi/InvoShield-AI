@@ -36,6 +36,19 @@ export const CURRENCY_CONFIGS: Record<CurrencyCode, CurrencyConfig> = {
 export const DEFAULT_CURRENCY: CurrencyCode = 'USD';
 
 /**
+ * Approximate units per 1 USD for every currency an invoice may be stored in.
+ * Keep in sync with FX_RATES_PER_USD in backend/app/core/config.py.
+ */
+export const FX_RATES_PER_USD: Record<string, number> = { USD: 1.0, INR: 83.0, EUR: 0.92, GBP: 0.79 };
+
+/** Convert an amount stored in `fromCurrency` (an invoice's own currency) to USD. */
+export function toUSD(amount: number | null | undefined, fromCurrency: string = 'USD'): number {
+  if (amount === null || amount === undefined || isNaN(amount)) return 0;
+  const rate = FX_RATES_PER_USD[(fromCurrency || 'USD').toUpperCase()] ?? 1.0;
+  return amount / rate;
+}
+
+/**
  * Converts a base numeric amount (in USD) to the target currency.
  */
 export function convertCurrency(
@@ -74,7 +87,7 @@ export function formatCurrency(
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
     }).format(convertedValue);
-  } catch (error) {
+  } catch {
     const formattedNum = convertedValue.toLocaleString(config.locale, {
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,

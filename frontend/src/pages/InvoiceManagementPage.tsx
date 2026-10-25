@@ -1,20 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  FileText,
   Search,
   Download,
   Check,
   X,
   UploadCloud,
   Eye,
-  ArrowRight,
-  Filter,
 } from 'lucide-react';
 import { invoicesApi } from '../services/api';
 import { Invoice } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
+import { toUSD } from '../utils/currency';
 
 export const InvoiceManagementPage: React.FC = () => {
   const { currency, formatAmount, convertAmount } = useCurrency();
@@ -71,7 +69,7 @@ export const InvoiceManagementPage: React.FC = () => {
       inv.invoice_number || '',
       `"${inv.vendor_name || ''}"`,
       inv.invoice_date || '',
-      convertAmount(inv.total_amount).toFixed(2),
+      convertAmount(toUSD(inv.total_amount, inv.currency)).toFixed(2),
       inv.status,
       inv.risk_level,
       inv.validation_status,
@@ -250,7 +248,7 @@ export const InvoiceManagementPage: React.FC = () => {
                     <td className="py-3 px-3.5 text-gray-700 truncate max-w-[150px]">{inv.vendor_name || 'N/A'}</td>
                     <td className="py-3 px-3.5 text-gray-500 text-[11px]">{inv.invoice_date || 'N/A'}</td>
                     <td className="py-3 px-3.5 font-semibold text-gray-900 text-right">
-                      {formatAmount(inv.total_amount)}
+                      {formatAmount(inv.total_amount, 2, inv.currency)}
                     </td>
                     <td className="py-3 px-3.5 text-center">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${

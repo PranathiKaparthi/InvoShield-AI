@@ -1,15 +1,37 @@
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import desc, or_
+
+from app.core.config import settings
 
 from app.database.session import get_db
 from app.api.deps import get_current_user
-from app.models.entities import User, Invoice, AuditLog, DuplicateCheck
+from app.models.entities import User, Invoice, AuditLog
 from app.schemas.schemas import DashboardStatistics, DashboardAnalytics
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard Analytics"])
+
+
+def to_usd(amount, currency) -> float:
+    """Dashboard totals mix invoices in different currencies; add them up in one base (USD).
+    The web app converts the base to the currency the user picks."""
+    rate = settings.FX_RATES_PER_USD.get((currency or "USD").upper(), 1.0) or 1.0
+    return float(amount or 0.0) / rate
+
+
+def scoped_audit_logs(db: Session, user: User):
+    """Admins see every event; reviewers only their organization's; users only their own."""
+    q = db.query(AuditLog)
+    if user.role == "user":
+        return q.filter(AuditLog.user_id == user.id)
+    if user.role == "reviewer":
+        org = user.organization or "General"
+        org_users = db.query(User.id).filter(User.organization == org)
+        org_invoices = db.query(Invoice.id).filter(Invoice.organization == org)
+        return q.filter(or_(AuditLog.user_id.in_(org_users), AuditLog.invoice_id.in_(org_invoices)))
+    return q
 
 @router.get("/statistics", response_model=DashboardStatistics)
 def get_dashboard_statistics(
@@ -32,12 +54,8 @@ def get_dashboard_statistics(
     dup_alerts = query.filter(Invoice.duplicate_status.in_(["Highly Likely Duplicate", "Possible Duplicate"])).count()
     high_risk = query.filter(Invoice.risk_level.ilike("high")).count()
 
-    total_amt = db.query(func.sum(Invoice.total_amount))
-    if current_user.role == "user":
-        total_amt = total_amt.filter(Invoice.user_id == current_user.id)
-    elif current_user.role == "reviewer":
-        total_amt = total_amt.filter(Invoice.organization == (current_user.organization or "General"))
-    total_val = float(total_amt.scalar() or 0.0)
+    total_val = sum(to_usd(amount, cur) for amount, cur in
+                    query.with_entities(Invoice.total_amount, Invoice.currency).all())
 
     return {
         "total_invoices": total_invoices,
@@ -101,7 +119,7 @@ def get_dashboard_analytics(
             day_str = inv.created_at.strftime("%b %d")
             if day_str in days_map:
                 days_map[day_str]["count"] += 1
-                days_map[day_str]["amount"] = round(days_map[day_str]["amount"] + float(inv.total_amount or 0.0), 2)
+                days_map[day_str]["amount"] = round(days_map[day_str]["amount"] + to_usd(inv.total_amount, inv.currency), 2)
 
     processing_over_time = list(days_map.values())
 
@@ -112,14 +130,9 @@ def get_dashboard_analytics(
         if v not in vendor_stats:
             vendor_stats[v] = {"vendor": v, "count": 0, "total_amount": 0.0}
         vendor_stats[v]["count"] += 1
-        vendor_stats[v]["total_amount"] = round(vendor_stats[v]["total_amount"] + float(inv.total_amount or 0.0), 2)
+        vendor_stats[v]["total_amount"] = round(vendor_stats[v]["total_amount"] + to_usd(inv.total_amount, inv.currency), 2)
 
     vendor_distribution = sorted(vendor_stats.values(), key=lambda x: x["total_amount"], reverse=True)[:5]
-    if not vendor_distribution:
-        vendor_distribution = [
-            {"vendor": "Apex Technologies", "count": 1, "total_amount": 1250.0},
-            {"vendor": "CloudHost Services", "count": 1, "total_amount": 890.0}
-        ]
 
     # 5. Monthly Totals
     monthly_map = {}
@@ -132,15 +145,12 @@ def get_dashboard_analytics(
             m_str = inv.created_at.strftime("%b %Y")
             if m_str in monthly_map:
                 monthly_map[m_str]["count"] += 1
-                monthly_map[m_str]["amount"] = round(monthly_map[m_str]["amount"] + float(inv.total_amount or 0.0), 2)
+                monthly_map[m_str]["amount"] = round(monthly_map[m_str]["amount"] + to_usd(inv.total_amount, inv.currency), 2)
 
     monthly_totals = list(monthly_map.values())
 
     # 6. Recent Activities from Audit Logs
-    audit_query = db.query(AuditLog).order_by(desc(AuditLog.timestamp))
-    if current_user.role == "user":
-        audit_query = audit_query.filter(AuditLog.user_id == current_user.id)
-    recent_audits = audit_query.limit(10).all()
+    recent_audits = scoped_audit_logs(db, current_user).order_by(desc(AuditLog.timestamp)).limit(10).all()
 
     formatted_audits = []
     for a in recent_audits:

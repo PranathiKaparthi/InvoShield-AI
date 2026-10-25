@@ -3,12 +3,6 @@ import { Link } from 'react-router-dom';
 import {
   Upload,
   ArrowRight,
-  CheckCircle2,
-  AlertTriangle,
-  AlertCircle,
-  Clock,
-  FileText,
-  Eye,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -21,11 +15,9 @@ import {
 } from 'recharts';
 import { dashboardApi, invoicesApi } from '../services/api';
 import { DashboardStats, DashboardAnalytics, Invoice } from '../types';
-import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
 
 export const DashboardPage: React.FC = () => {
-  const { user, isAdmin, isReviewer } = useAuth();
   const { currency, formatAmount } = useCurrency();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
@@ -187,7 +179,7 @@ export const DashboardPage: React.FC = () => {
                     <td className="py-3 px-4 text-gray-700 truncate max-w-[180px]">{inv.vendor_name || 'N/A'}</td>
                     <td className="py-3 px-4 text-gray-500">{inv.invoice_date || 'N/A'}</td>
                     <td className="py-3 px-4 text-right font-medium text-gray-900">
-                      {formatAmount(inv.total_amount)}
+                      {formatAmount(inv.total_amount, 2, inv.currency)}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span

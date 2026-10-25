@@ -9,7 +9,6 @@ Webhooks (public, signature/secret protected):
 Assistant Inbox (admin / reviewer, scoped to their organization):
   conversations, messages, approval queue, contacts, settings, test console (simulate).
 """
-import base64
 import hmac
 import json
 import logging

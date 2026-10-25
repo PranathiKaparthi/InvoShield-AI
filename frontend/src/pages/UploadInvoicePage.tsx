@@ -4,12 +4,9 @@ import {
   UploadCloud,
   FileText,
   AlertCircle,
-  Clock,
   ArrowRight,
-  ShieldCheck,
   Check,
   FileCode,
-  X,
   Layers,
 } from 'lucide-react';
 import { invoicesApi } from '../services/api';

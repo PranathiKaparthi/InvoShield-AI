@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, User as UserIcon, LogOut, ExternalLink, Building2 } from 'lucide-react';
+import { Shield, User as UserIcon, LogOut, ExternalLink, Building2, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCurrency } from '../context/CurrencyContext';
 
-export const Navbar: React.FC = () => {
+export const Navbar: React.FC<{ onMenuClick?: () => void }> = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
   const { currency, setCurrency } = useCurrency();
 
@@ -20,9 +20,19 @@ export const Navbar: React.FC = () => {
   };
 
   return (
-    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 z-30 sticky top-0">
+    <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between gap-2 px-3 sm:px-6 z-30 sticky top-0">
       {/* Brand & Identity */}
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+        {onMenuClick && (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="md:hidden p-1.5 -ml-1 rounded text-gray-600 hover:bg-gray-100"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <Link to="/dashboard" className="flex items-center space-x-2.5">
           <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center text-white">
             <Shield className="w-4 h-4" />
@@ -39,7 +49,7 @@ export const Navbar: React.FC = () => {
       </div>
 
       {/* Right User & Org Controls */}
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
         {/* Currency Switcher */}
         <div
           className="flex items-center bg-gray-100 p-0.5 rounded-md border border-gray-200 text-xs"
@@ -75,7 +85,7 @@ export const Navbar: React.FC = () => {
         <Link
           to="/"
           target="_blank"
-          className="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1 transition-colors px-2.5 py-1 rounded hover:bg-gray-100"
+          className="hidden sm:flex text-xs text-gray-500 hover:text-gray-900 items-center gap-1 transition-colors px-2.5 py-1 rounded hover:bg-gray-100"
           title="System Architecture & Docs"
         >
           <span className="hidden md:inline">Documentation</span>
@@ -83,7 +93,7 @@ export const Navbar: React.FC = () => {
         </Link>
 
         {user ? (
-          <div className="flex items-center space-x-3 border-l border-gray-200 pl-3">
+          <div className="flex items-center space-x-2 sm:space-x-3 border-l border-gray-200 pl-2 sm:pl-3">
             {/* Organization Tag */}
             <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded bg-gray-50 border border-gray-200 text-xs text-gray-700">
               <Building2 className="w-3.5 h-3.5 text-gray-500" />

@@ -129,7 +129,7 @@ export const AdminDashboardPage: React.FC = () => {
                     </td>
                     <td className="py-2.5 px-3.5 text-gray-800">{inv.vendor_name || 'Unknown'}</td>
                     <td className="py-2.5 px-3.5 font-mono font-medium text-gray-900 text-right">
-                      {formatAmount(inv.total_amount)}
+                      {formatAmount(inv.total_amount, 2, inv.currency)}
                     </td>
                     <td className="py-2.5 px-3.5 text-center">
                       <span className="px-2 py-0.5 rounded text-[11px] font-mono uppercase bg-amber-50 text-amber-800 border border-amber-200">

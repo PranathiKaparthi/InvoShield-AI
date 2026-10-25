@@ -22,7 +22,7 @@ from app.agent import approval
 from app.agent.formatting import (fmt_dt, format_money, local_day_bounds_utc, local_today,
                                   parse_iso_date)
 from app.agent.identity import Identity, normalize_email, normalize_phone
-from app.agent.policies import allowed_tools, scoped_invoices, vendor_status
+from app.agent.policies import allowed_tools, scoped_invoices, staff_status, vendor_status
 from app.channels import MediaRef
 from app.models.agent_entities import AgentApproval, AgentContact, AgentConversation
 from app.models.entities import AuditLog, DuplicateCheck, FraudAlert, Invoice, ValidationResult
@@ -203,7 +203,13 @@ def _validation_issues(db: Session, invoice: Invoice) -> List[str]:
                                              ValidationResult.validation_status.in_(["Invalid", "Warning", "Missing"])).all()
     issues = []
     for r in rows:
-        if r.field_name in ("gst_number", "tax_id", "bank_details"):
+        if r.field_name == "calculation_check":
+            expected = round(float(invoice.subtotal or 0) + float(invoice.tax_amount or 0) - float(invoice.discount or 0), 2)
+            diff = abs(round(float(invoice.total_amount or 0) - expected, 2))
+            issues.append(f"the total {format_money(invoice.total_amount, invoice.currency)} doesn't match "
+                          f"subtotal + tax - discount ({format_money(expected, invoice.currency)}), "
+                          f"a difference of {format_money(diff, invoice.currency)}")
+        elif r.field_name in ("gst_number", "tax_id", "bank_details"):
             issues.append(f"{r.field_name.replace('_', ' ')}: {r.validation_status.lower()}")
         else:
             issues.append(r.validation_message or f"{r.field_name}: {r.validation_status}")
@@ -231,7 +237,8 @@ def invoice_view(ctx: ToolContext, inv: Invoice, detail: bool = False) -> Dict[s
         if inv.status == "approved":
             view["approved_on"] = _approved_on(ctx.db, inv)
     else:
-        view["status"] = inv.status
+        view["status"] = staff_status(inv)
+        view["status_code"] = inv.status
         view["invoice_id"] = inv.id
         view["risk_level"] = inv.risk_level
         view["duplicate_status"] = inv.duplicate_status
@@ -411,20 +418,20 @@ def t_get_daily_summary(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any
         AuditLog.action == "INVOICE_APPROVED", AuditLog.timestamp >= start, AuditLog.timestamp < end,
         AuditLog.invoice_id.in_(ctx.db.query(visible_ids.c.id))).scalar() or 0
     totals: Dict[str, float] = {}
-    by_vendor: Dict[str, float] = {}
+    by_vendor: Dict[tuple, float] = {}
     for inv in received:
         cur = (inv.currency or "INR").upper()
         totals[cur] = totals.get(cur, 0.0) + float(inv.total_amount or 0)
-        by_vendor[inv.vendor_name or "Unknown"] = by_vendor.get(inv.vendor_name or "Unknown", 0.0) + float(inv.total_amount or 0)
+        key = (inv.vendor_name or "Unknown", cur)
+        by_vendor[key] = by_vendor.get(key, 0.0) + float(inv.total_amount or 0)
     top = sorted(by_vendor.items(), key=lambda kv: kv[1], reverse=True)[:3]
-    cur0 = received[0].currency if received else "INR"
     return {
         "date": day.isoformat(),
         "received": len(received),
         "approved": int(approved),
         "flagged": sum(1 for i in received if i.status == "flagged" or (i.risk_level or "").lower() == "high"),
         "received_value": [format_money(v, c) for c, v in totals.items()] or [format_money(0, "INR")],
-        "top_vendors": [{"vendor": v, "amount": format_money(a, cur0)} for v, a in top],
+        "top_vendors": [{"vendor": v, "amount": format_money(a, c)} for (v, c), a in top],
         "waiting_for_review_overall": scope.filter(Invoice.status.in_(PENDING_STATUSES)).count(),
     }
 
@@ -544,14 +551,14 @@ def execute_tool(ctx: ToolContext, name: str, args: Any) -> Dict[str, Any]:
             result = TOOL_FUNCS[name](ctx, clean)
         except ToolInputError as exc:
             result = {"error": "invalid_input", "message": str(exc)}
-        except Exception as exc:  # keep the conversation alive; details go to logs only
+        except Exception:  # keep the conversation alive; details go to logs only
             logger.exception(f"Tool {name} failed")
             ctx.db.rollback()
             result = {"error": "tool_failed", "message": "Something went wrong while looking that up."}
 
     ctx.db.add(AuditLog(
         user_id=ident.user.id if ident.user else None,
-        action=f"AGENT_TOOL_CALL",
+        action="AGENT_TOOL_CALL",
         details=json.dumps({"tool": name, "args": args, "caller": ident.address, "role": ident.role,
                             "conversation_id": ctx.conversation.id,
                             "outcome": result.get("error", "ok")}, default=str)[:2000],

@@ -4,6 +4,7 @@ import {
   CURRENCY_CONFIGS,
   DEFAULT_CURRENCY,
   convertCurrency,
+  toUSD,
   formatCurrency,
   getCurrencySymbol,
 } from '../utils/currency';
@@ -13,7 +14,8 @@ interface CurrencyContextType {
   setCurrency: (currency: CurrencyCode) => void;
   currencySymbol: string;
   exchangeRate: number;
-  formatAmount: (amountInUSD: number | null | undefined, fractionDigits?: number) => string;
+  /** Format an amount for display. Pass the invoice's own currency so rupee invoices aren't read as dollars. */
+  formatAmount: (amount: number | null | undefined, fractionDigits?: number, fromCurrency?: string) => string;
   convertAmount: (amountInUSD: number | null | undefined) => number;
 }
 
@@ -46,8 +48,8 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCurrencyState(newCurrency);
   };
 
-  const formatAmount = (amountInUSD: number | null | undefined, fractionDigits: number = 2) => {
-    return formatCurrency(amountInUSD, currency, fractionDigits);
+  const formatAmount = (amount: number | null | undefined, fractionDigits: number = 2, fromCurrency: string = 'USD') => {
+    return formatCurrency(toUSD(amount, fromCurrency || 'USD'), currency, fractionDigits);
   };
 
   const convertAmount = (amountInUSD: number | null | undefined) => {

@@ -1,7 +1,7 @@
 import io
 import os
 import logging
-from typing import Dict, Any, Tuple
+from typing import Tuple
 from PIL import Image
 import pytesseract
 from pypdf import PdfReader

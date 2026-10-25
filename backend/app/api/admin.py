@@ -1,12 +1,12 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.database.session import get_db
 from app.api.deps import require_role
 from app.models.entities import User, AuditLog, Invoice
-from app.schemas.schemas import UserResponse, AuditLogResponse, InvoiceResponse
+from app.schemas.schemas import UserResponse
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Operations"], dependencies=[Depends(require_role(["admin"]))])

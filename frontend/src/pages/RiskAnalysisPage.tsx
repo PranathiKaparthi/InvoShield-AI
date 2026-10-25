@@ -117,7 +117,7 @@ export const RiskAnalysisPage: React.FC = () => {
           >
             {invoices.map((inv) => (
               <option key={inv.id} value={inv.id}>
-                #{inv.invoice_number || `ID ${inv.id}`} · {inv.vendor_name || 'Vendor'} · {formatAmount(inv.total_amount)} · Risk: {inv.risk_level} ({inv.risk_score})
+                #{inv.invoice_number || `ID ${inv.id}`} · {inv.vendor_name || 'Vendor'} · {formatAmount(inv.total_amount, 2, inv.currency)} · Risk: {inv.risk_level} ({inv.risk_score})
               </option>
             ))}
           </select>
