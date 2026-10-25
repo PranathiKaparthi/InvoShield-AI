@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     # Google Gemini: key from https://aistudio.google.com/app/apikey
     GOOGLE_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Tried in order when the main model is busy (Google "high demand" / rate limit).
+    GEMINI_FALLBACK_MODELS: str = "gemini-2.5-flash,gemini-flash-latest"
     AGENT_MAX_TOKENS: int = 1024
     AGENT_MAX_TOOL_ROUNDS: int = 6
     AGENT_HISTORY_TURNS: int = 12

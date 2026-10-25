@@ -773,3 +773,20 @@ def test_gemini_errors_hand_off_to_team():
     llm.set_provider(GeminiProvider("AIza-bad", "gemini-test", 1024,
                                     client=httpx.Client(transport=httpx.MockTransport(handler))))
     assert "passed this to the team" in simulate(VENDOR_PHONE, "status?")["replies"][0]
+
+
+def test_gemini_busy_model_falls_back_to_backup():
+    from app.agent.llm import GeminiProvider
+    asked = []
+
+    def handler(request):
+        model = request.url.path.split("/models/")[1].split(":")[0]
+        asked.append(model)
+        if model == "gemini-busy":
+            return httpx.Response(503, json={"error": {"message": "This model is currently experiencing high demand."}})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "Hello from backup"}]}}]})
+
+    provider = GeminiProvider("AIza-test", "gemini-busy", 1024, retry_wait=0, fallback_models=["gemini-2.5-flash"],
+                              client=httpx.Client(transport=httpx.MockTransport(handler)))
+    resp = provider.complete("sys", [{"role": "user", "content": "hi"}], [])
+    assert resp.text == "Hello from backup" and asked == ["gemini-busy", "gemini-busy", "gemini-2.5-flash"]

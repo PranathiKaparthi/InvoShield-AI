@@ -337,6 +337,16 @@ def main() -> None:
                 ok(msg)
                 break
             bad(msg)
+            if "demand" in msg.lower() or "overloaded" in msg.lower() or "unavailable" in msg.lower():
+                for alt in [m for m in models if m != model][:4]:
+                    print(f"  That model is busy at Google right now; trying {alt} ...")
+                    good, msg = check_gemini(key, alt)
+                    if good:
+                        model = alt
+                        ok(msg)
+                        break
+                if good:
+                    break
             if not yes("Try again?"):
                 print(f"{YELLOW}  Saved anyway; the assistant will hand chats to your team until the key works.{END}")
                 break

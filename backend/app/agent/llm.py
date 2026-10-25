@@ -9,6 +9,7 @@ LLM providers behind one small interface so the provider can be swapped.
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -143,10 +144,14 @@ class GeminiProvider(LLMProvider):
     """Google Gemini (generateContent REST API) with function calling."""
     name = "gemini"
 
-    def __init__(self, api_key: str, model: str, max_tokens: int, client=None):
+    def __init__(self, api_key: str, model: str, max_tokens: int, client=None,
+                 fallback_models: Optional[List[str]] = None, retry_wait: float = 1.5):
         import httpx
         self.api_key = api_key
         self.model = model.replace("models/", "")
+        self.fallback_models = [m.strip() for m in (fallback_models if fallback_models is not None
+                                                    else (settings.GEMINI_FALLBACK_MODELS or "").split(",")) if m.strip()]
+        self.retry_wait = retry_wait
         # Newer Gemini models spend part of the output budget on internal reasoning.
         self.max_tokens = max(max_tokens, 4096)
         self.client = client or httpx.Client(timeout=60.0)
@@ -161,8 +166,15 @@ class GeminiProvider(LLMProvider):
             body["tools"] = [{"functionDeclarations": [
                 {"name": t["name"], "description": t.get("description", ""),
                  "parameters": gemini_schema(t["input_schema"])} for t in tools]}]
-        resp = self.client.post(f"{GEMINI_BASE}/models/{self.model}:generateContent", json=body,
-                                headers={"x-goog-api-key": self.api_key})
+        resp = None
+        # Busy or rate-limited (429/503/500): wait briefly and retry, then try the backup models.
+        for model in [self.model, self.model] + [m for m in self.fallback_models if m != self.model]:
+            resp = self.client.post(f"{GEMINI_BASE}/models/{model}:generateContent", json=body,
+                                    headers={"x-goog-api-key": self.api_key})
+            if resp.status_code not in (429, 500, 503):
+                break
+            logger.warning(f"Gemini model {model} busy ({resp.status_code}); retrying")
+            time.sleep(self.retry_wait)
         if resp.status_code >= 400:
             try:
                 detail = resp.json().get("error", {}).get("message", resp.text)
