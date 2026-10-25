@@ -263,7 +263,8 @@ def _date_range(args: Dict[str, Any], default_days: Optional[int]):
 def _match_contact(ctx: ToolContext, text: str) -> Dict[str, Any]:
     org = ctx.identity.organization
     contacts = ctx.db.query(AgentContact).filter(AgentContact.organization == org,
-                                                 AgentContact.verified.is_(True)).all()
+                                                 or_(AgentContact.verified.is_(True),
+                                                     AgentContact.self_registered.is_(True))).all()
     phone, email = normalize_phone(text), normalize_email(text)
     for c in contacts:
         if (email and c.email and c.email.lower() == email) or (phone and len(phone) >= 11 and c.phone_e164 == phone):

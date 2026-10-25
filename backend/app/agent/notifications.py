@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def vendor_contact_for_invoice(db: Session, invoice: Invoice) -> Optional[AgentContact]:
     if invoice.source_contact_id:
         contact = db.query(AgentContact).filter(AgentContact.id == invoice.source_contact_id).first()
-        if contact and contact.verified and contact.kind == "vendor":
+        if contact and (contact.verified or contact.self_registered) and contact.kind == "vendor":
             return contact
     if invoice.vendor_name:
         return db.query(AgentContact).filter(

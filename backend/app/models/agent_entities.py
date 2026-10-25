@@ -25,6 +25,10 @@ class AgentContact(Base):
     phone_e164 = Column(String(20), index=True, nullable=True)  # e.g. +919876543210
     email = Column(String(255), index=True, nullable=True)
     verified = Column(Boolean, default=False, nullable=False)
+    # New vendors/customers who introduce themselves on WhatsApp/email. Until the owner verifies
+    # them they can use the assistant, but only for invoices they sent themselves.
+    self_registered = Column(Boolean, default=False, nullable=False)
+    onboarding_step = Column(String(30), nullable=True)  # None | ask_name | done
     preferred_language = Column(String(10), default="auto")  # auto | en | ta | te | hi
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utc_now)
@@ -101,5 +105,6 @@ class AgentSettings(Base):
     business_name = Column(String(255), nullable=True)
     default_language = Column(String(10), default="auto")
     auto_reply = Column(Boolean, default=True)
+    allow_new_contacts = Column(Boolean, default=True)  # welcome new vendors instead of turning them away
     notify_vendors = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.agent import approval, menu
+from app.agent import approval, menu, onboarding
 from app.agent.delivery import deliver, flush_deferred
 from app.agent.identity import resolve_identity
 from app.agent.llm import OfflineProvider, get_provider
@@ -93,12 +93,15 @@ def _reply(db: Session, conv: AgentConversation, text: str, result: HandleResult
     result.replies.append(text)
 
 
-def _last_reply_was_menu(db: Session, conv: AgentConversation, current_inbound_id: int) -> bool:
-    last = db.query(AgentMessage).filter(AgentMessage.conversation_id == conv.id,
-                                         AgentMessage.direction == "outbound",
-                                         AgentMessage.id < current_inbound_id) \
-        .order_by(AgentMessage.id.desc()).first()
-    return bool(last and menu.MENU_MARKER in (last.content or ""))
+def _menu_shown_recently(db: Session, conv: AgentConversation, current_inbound_id: int,
+                         lookback: int = 6) -> bool:
+    """A bare number counts as a menu choice if the menu was among the last few replies, so
+    "1" still works after, say, an invoice receipt."""
+    recent = db.query(AgentMessage).filter(AgentMessage.conversation_id == conv.id,
+                                           AgentMessage.direction == "outbound",
+                                           AgentMessage.id < current_inbound_id) \
+        .order_by(AgentMessage.id.desc()).limit(lookback).all()
+    return any(menu.MENU_MARKER in (m.content or "") for m in recent)
 
 
 def handle_inbound(db: Session, inbound: InboundMessage) -> HandleResult:
@@ -133,6 +136,15 @@ def handle_inbound(db: Session, inbound: InboundMessage) -> HandleResult:
     attachments, problems = _prepare_attachments(inbound) if inbound.media else ({}, [])
 
     # ---------------------------------------------------------------- unknown / unverified sender
+    if not identity.is_known and org_settings.allow_new_contacts and identity.contact \
+            and identity.contact.kind == "vendor" and identity.contact.onboarding_step in (None, "ask_name"):
+        # New vendor/customer: welcome them, accept their invoices, ask who they are.
+        result.status = "new_contact"
+        text = onboarding.handle_new_contact(db, identity, conv, inbound.text or "", attachments, problems,
+                                             business, inbound.sender_name)
+        _reply(db, conv, text, result)
+        return result
+
     if not identity.is_known:
         result.status = "unknown_sender"
         for media in attachments.values():
@@ -175,7 +187,7 @@ def handle_inbound(db: Session, inbound: InboundMessage) -> HandleResult:
             _reply(db, conv, menu.build_menu(identity, business, multilingual), result)
             return result
         choice = menu.parse_choice(request_text)
-        if choice is not None and _last_reply_was_menu(db, conv, inbound_msg.id):
+        if choice is not None and _menu_shown_recently(db, conv, inbound_msg.id):
             run, ask = menu.resolve_choice(identity, choice)
             if ask:
                 _reply(db, conv, ask, result)

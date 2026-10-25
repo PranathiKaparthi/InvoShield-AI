@@ -50,6 +50,7 @@ class Identity:
     role: str  # vendor | admin | reviewer | user | unknown
     organization: str
     verified: bool
+    limited: bool = False  # self-registered vendor not yet verified by the owner
 
     @property
     def display_name(self) -> str:
@@ -63,7 +64,7 @@ class Identity:
 
     @property
     def is_known(self) -> bool:
-        return self.contact is not None and self.verified and self.kind in ("vendor", "staff")
+        return self.contact is not None and (self.verified or self.limited) and self.kind in ("vendor", "staff")
 
     @property
     def contact_id(self) -> Optional[int]:
@@ -99,6 +100,9 @@ def resolve_identity(db: Session, channel: str, raw_address: str) -> Identity:
         db.refresh(contact)
 
     if not contact.verified:
+        if contact.kind == "vendor" and contact.self_registered and contact.onboarding_step == "done":
+            return Identity(channel, address, contact, None, "vendor", "vendor", contact.organization,
+                            verified=False, limited=True)
         return Identity(channel, address, contact, None, "unknown", "unknown", contact.organization, False)
 
     if contact.kind == "staff":

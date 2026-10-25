@@ -111,7 +111,7 @@ export const agentApi = {
   updateContact: (id: number, data: ContactInput) => apiClient.put<AgentContact>(`/api/agent/contacts/${id}`, data),
   deleteContact: (id: number) => apiClient.delete(`/api/agent/contacts/${id}`),
   getSettings: () => apiClient.get<AgentSettings>('/api/agent/settings'),
-  updateSettings: (data: Pick<AgentSettings, 'business_name' | 'default_language' | 'auto_reply' | 'notify_vendors'>) =>
+  updateSettings: (data: Pick<AgentSettings, 'business_name' | 'default_language' | 'auto_reply' | 'notify_vendors' | 'allow_new_contacts'>) =>
     apiClient.put<AgentSettings>('/api/agent/settings', data),
   simulate: (sender: string, text: string, channel: string, file?: File | null) => {
     const form = new FormData();

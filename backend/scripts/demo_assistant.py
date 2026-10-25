@@ -110,7 +110,8 @@ def main():
     send(db, OWNER, "Owner", "Approve QS-2045")
     send(db, OWNER, "Owner", "YES")
     send(db, VENDOR, "Vendor", "bill aaya kya? status?")
-    send(db, "+919812345678", "Unknown number", "What's my payment status?")
+    send(db, "+919812345678", "New customer", "Hello, can I send you my bills here?")
+    send(db, "+919812345678", "New customer", "I am Meena from Fresh Farms")
     db.close()
 
 

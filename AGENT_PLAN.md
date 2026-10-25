@@ -90,3 +90,4 @@ New columns: `invoices.payment_status`, `invoices.source_channel`, `invoices.sou
 | Dashboard unusable on phones | Menu button + slide-out sidebar |
 | Daily summary showed rupee vendor totals with a $ sign | Each vendor keeps its own currency |
 | Assistant needed exact phrasing | Numbered menu, follow-up questions, everyday Hinglish/Tanglish and native-script keywords, plain-language replies |
+| Unknown numbers were turned away | New vendors/customers are onboarded in chat (`agent/onboarding.py`) with access limited to their own submissions until verified; owner notified; switchable per organization |

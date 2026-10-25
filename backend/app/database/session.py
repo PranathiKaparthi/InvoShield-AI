@@ -47,6 +47,13 @@ _COLUMN_MIGRATIONS = {
     "users": [
         ("must_change_password", "BOOLEAN DEFAULT FALSE NOT NULL"),
     ],
+    "agent_contacts": [
+        ("self_registered", "BOOLEAN DEFAULT FALSE NOT NULL"),
+        ("onboarding_step", "VARCHAR(30)"),
+    ],
+    "agent_settings": [
+        ("allow_new_contacts", "BOOLEAN DEFAULT TRUE"),
+    ],
 }
 
 

@@ -58,6 +58,11 @@ VENDOR_WHO = (
     "words the tools return (for example \"under review\"); never mention risk scores, fraud checks or "
     "duplicate checks."
 )
+NEW_VENDOR_WHO = (
+    "{name}, a NEW vendor/customer who introduced themselves on chat and is not yet verified by "
+    "{business_name}. Be welcoming. They can send invoices and ask about invoices they sent here; "
+    "describe statuses in simple words; never mention risk or fraud checks."
+)
 STAFF_WHO = (
     "{name}, a verified staff member of {business_name} with the '{role}' role. They can see the "
     "business's invoices, fraud reasons and duplicates."
@@ -68,7 +73,9 @@ STAFF_USER_WHO = "{name}, a staff member with the basic 'user' role. They can se
 def build_system_prompt(identity: Identity, business_name: str, tool_names: Iterable[str],
                         preferred_language: str = "auto") -> str:
     name = identity.display_name
-    if identity.kind == "vendor":
+    if identity.kind == "vendor" and identity.limited:
+        who = NEW_VENDOR_WHO.format(name=name, business_name=business_name)
+    elif identity.kind == "vendor":
         vendor = f" (vendor account: {identity.contact.vendor_name})" if identity.contact and identity.contact.vendor_name else ""
         who = VENDOR_WHO.format(name=name, vendor=vendor)
     elif identity.role in ("admin", "reviewer"):

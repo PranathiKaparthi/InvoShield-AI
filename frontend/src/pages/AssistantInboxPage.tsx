@@ -50,6 +50,7 @@ const APPROVAL_LABELS: Record<AgentApproval['type'], string> = {
   document_copy: 'Send invoice copy',
   held_reply: 'Reply waiting (auto-reply off)',
   handoff: 'Needs a person',
+  new_contact: 'New vendor / customer',
 };
 
 const LANGS: [string, string][] = [
@@ -291,7 +292,7 @@ const ApprovalsTab: React.FC<{ onCountChange: (n: number) => void }> = ({ onCoun
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <Badge tone={item.type === 'handoff' ? 'amber' : 'blue'}>{APPROVAL_LABELS[item.type]}</Badge>
+                      <Badge tone={item.type === 'handoff' ? 'amber' : item.type === 'new_contact' ? 'green' : 'blue'}>{APPROVAL_LABELS[item.type]}</Badge>
                       <Badge tone={item.status === 'pending' ? 'gray' : item.status === 'rejected' ? 'red' : 'green'}>
                         {item.status}
                       </Badge>
@@ -310,7 +311,7 @@ const ApprovalsTab: React.FC<{ onCountChange: (n: number) => void }> = ({ onCoun
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
                       >
                         <Check className="w-3.5 h-3.5" />
-                        {item.type === 'handoff' ? 'Mark handled' : editable || item.type === 'document_copy' ? 'Approve & send' : 'Approve'}
+                        {item.type === 'handoff' || item.type === 'new_contact' ? 'Mark handled' : editable || item.type === 'document_copy' ? 'Approve & send' : 'Approve'}
                       </button>
                       <button
                         disabled={busy === item.id}
@@ -423,8 +424,9 @@ const ContactsTab: React.FC = () => {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs text-gray-500 max-w-xl">
-          The assistant only shares invoice details with verified contacts. Vendors see only invoices for their
-          vendor name; staff get the permissions of their linked user account.
+          Verified vendors see invoices for their vendor name; staff get the permissions of their linked login.
+          New vendors who introduce themselves on chat appear here as “new” and only see invoices they sent
+          until you edit and save them.
         </p>
         <button
           onClick={() => startEdit()}
@@ -523,7 +525,16 @@ const ContactsTab: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-gray-600">
-                    {!c.verified ? <Badge tone="amber">unverified</Badge> : c.kind === 'staff'
+                    {!c.verified ? (
+                      c.self_registered && c.onboarding_step !== 'blocked' ? (
+                        <span className="flex items-center gap-1.5 flex-wrap">
+                          <Badge tone="green">new · self-registered</Badge>
+                          <span className="text-[11px] text-gray-500">
+                            {c.vendor_name ? `says: ${c.vendor_name}` : 'name not given yet'} · edit &amp; save to verify
+                          </span>
+                        </span>
+                      ) : <Badge tone="amber">unverified</Badge>
+                    ) : c.kind === 'staff'
                       ? <span>Staff · {c.user_email} ({c.user_role})</span>
                       : <span>Vendor · {c.vendor_name}</span>}
                   </td>
@@ -585,6 +596,7 @@ const SettingsTab: React.FC = () => {
         default_language: s.default_language,
         auto_reply: s.auto_reply,
         notify_vendors: s.notify_vendors,
+        allow_new_contacts: s.allow_new_contacts,
       });
       setS(res.data);
       setSaved(true);
@@ -618,6 +630,17 @@ const SettingsTab: React.FC = () => {
           <span className="text-xs text-gray-700">
             Auto-reply to vendors
             <span className="block text-[11px] text-gray-500">When off, every reply waits in Approvals for you to send.</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-0.5" checked={s.allow_new_contacts}
+            onChange={(e) => setS({ ...s, allow_new_contacts: e.target.checked })} />
+          <span className="text-xs text-gray-700">
+            Welcome new vendors and customers
+            <span className="block text-[11px] text-gray-500">
+              Unknown numbers are greeted, asked their name and business, and can send invoices straight away.
+              They only see invoices they sent until you verify them in Contacts.
+            </span>
           </span>
         </label>
         <label className="flex items-start gap-2">

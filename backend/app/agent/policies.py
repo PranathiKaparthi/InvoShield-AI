@@ -48,7 +48,9 @@ def scoped_invoices(db: Session, identity: Identity) -> Query:
     if identity.kind == "vendor":
         contact = identity.contact
         conditions = [Invoice.source_contact_id == contact.id]
-        if contact.vendor_name:
+        # Matching by vendor name only after the owner verified the contact; a self-registered
+        # newcomer could otherwise claim another vendor's name and see their invoices.
+        if contact.vendor_name and contact.verified:
             conditions.append(func.lower(Invoice.vendor_name) == contact.vendor_name.strip().lower())
         return q.filter(or_(*conditions))
     if identity.role in ("admin", "reviewer"):

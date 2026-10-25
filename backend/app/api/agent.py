@@ -155,6 +155,7 @@ def _contact_dict(c: Optional[AgentContact]) -> Optional[Dict[str, Any]]:
             "user_role": c.user.role if c.user else None,
             "phone_e164": c.phone_e164, "email": c.email, "verified": c.verified,
             "preferred_language": c.preferred_language, "notes": c.notes,
+            "self_registered": bool(c.self_registered), "onboarding_step": c.onboarding_step,
             "created_at": c.created_at}
 
 
@@ -336,6 +337,8 @@ def delete_contact(contact_id: int, current_user: User = Depends(staff), db: Ses
     has_history = db.query(AgentConversation).filter(AgentConversation.contact_id == contact.id).first()
     if has_history:
         contact.verified = False
+        contact.self_registered = False
+        contact.onboarding_step = "blocked"  # removed by the owner: no automatic re-onboarding
         contact.notes = (contact.notes or "") + "\n[Removed by owner]"
     else:
         db.delete(contact)
@@ -351,6 +354,7 @@ class SettingsIn(BaseModel):
     default_language: str = Field("auto", pattern="^(auto|en|ta|te|hi)$")
     auto_reply: bool = True
     notify_vendors: bool = True
+    allow_new_contacts: bool = True
 
 
 def _settings_dict(db: Session, org: str) -> Dict[str, Any]:
@@ -363,6 +367,7 @@ def _settings_dict(db: Session, org: str) -> Dict[str, Any]:
         "default_language": s.default_language,
         "auto_reply": s.auto_reply,
         "notify_vendors": s.notify_vendors,
+        "allow_new_contacts": s.allow_new_contacts if s.allow_new_contacts is not None else True,
         "channel_mode": "mock" if is_mock_mode() else "live",
         "llm": provider_status(),
         "whatsapp": {"configured": bool(wa and wa.configured),
@@ -389,6 +394,7 @@ def write_settings(body: SettingsIn, current_user: User = Depends(staff), db: Se
     s.default_language = body.default_language
     s.auto_reply = body.auto_reply
     s.notify_vendors = body.notify_vendors
+    s.allow_new_contacts = body.allow_new_contacts
     db.add(AuditLog(user_id=current_user.id, action="AGENT_SETTINGS_UPDATED",
                     details=json.dumps(body.model_dump())))
     db.commit()

@@ -65,7 +65,7 @@ def fresh_state():
     MOCK_OUTBOX.clear()
     db = SessionLocal()
     s = get_agent_settings(db, ORG)
-    s.auto_reply, s.notify_vendors = True, True
+    s.auto_reply, s.notify_vendors, s.allow_new_contacts = True, True, True
     db.commit()
     db.close()
     yield
@@ -128,7 +128,15 @@ def sign(body: bytes, secret="test-app-secret"):
 
 
 # ------------------------------------------------------------------ identity & unknown senders
+def _allow_new_contacts(value: bool):
+    db = SessionLocal()
+    get_agent_settings(db, ORG).allow_new_contacts = value
+    db.commit()
+    db.close()
+
+
 def test_unknown_sender_gets_generic_reply_and_no_data():
+    _allow_new_contacts(False)  # owner switched off "welcome new vendors"
     out = simulate("+919811111111", "What is the status of QS-1001?")
     assert out["status"] == "unknown_sender"
     assert out["tool_calls"] == []
@@ -143,6 +151,7 @@ def test_unknown_sender_gets_generic_reply_and_no_data():
 
 
 def test_unknown_sender_invoice_goes_to_pending_verification():
+    _allow_new_contacts(False)
     number = new_number("UNK")
     out = simulate("+919822222222", "", invoice_text(number))
     assert out["status"] == "unknown_sender"
@@ -599,8 +608,9 @@ def test_menu_numbers_run_or_ask():
 
     simulate(OWNER_PHONE, "menu")
     assert "number from the list" in simulate(OWNER_PHONE, "9")["replies"][0]
-    # a bare number NOT right after a menu is treated as normal text, not a menu choice
-    assert simulate(OWNER_PHONE, "3")["tool_calls"] == [] or True
+    # numbers keep working a few messages after the menu was shown
+    simulate(OWNER_PHONE, "show duplicates")
+    assert simulate(OWNER_PHONE, "3")["tool_calls"][0]["name"] == "get_daily_summary"
 
 
 @pytest.mark.parametrize("text,tool", [
@@ -642,3 +652,78 @@ def test_vendor_payment_question_never_promises_a_date():
 def test_thanks_and_unknown_text_are_friendly():
     assert "welcome" in simulate(VENDOR_PHONE, "ok thanks")["replies"][0].lower()
     assert "MENU" in simulate(VENDOR_PHONE, "asdf qwerty")["replies"][0]
+
+
+# ------------------------------------------------------------------ new vendors / customers are welcomed
+def test_new_vendor_is_welcomed_onboarded_and_served():
+    phone = "+919844444444"
+    hello = simulate(phone, "Hello, I want to send you my bills")
+    assert hello["status"] == "new_contact"
+    assert "Welcome to" in hello["replies"][0] and "your name and your business name" in hello["replies"][0]
+
+    done = simulate(phone, "I am Kavya from Kavya Packaging")
+    assert "Thanks Kavya, you're all set" in done["replies"][0]
+    assert "Reply with a number" in done["replies"][0]
+
+    number = new_number("KP")
+    receipt = simulate(phone, "", invoice_text(number, vendor="Kavya Packaging"))
+    assert receipt["tool_calls"][0]["name"] == "ingest_invoice" and number in receipt["replies"][0]
+    mine = simulate(phone, "1")
+    assert number in mine["replies"][0]
+
+    items = client.get("/api/agent/approvals", headers=_h()).json()
+    assert any(i["type"] == "new_contact" and "Kavya" in i["summary"] for i in items)
+
+
+def test_new_vendor_sending_invoice_first_is_accepted_not_rejected():
+    phone = "+919855555555"
+    number = new_number("NV")
+    out = simulate(phone, "", invoice_text(number, vendor="Fresh Farms"))
+    reply = out["replies"][0]
+    assert out["status"] == "new_contact" and number in reply and "your name" in reply
+    assert invoice_by_number(number).status != "pending_verification"
+
+
+def test_new_vendor_cannot_see_others_invoices_by_claiming_a_name():
+    """A newcomer who says they are 'Quantum Solutions LLC' must not see Ravi's invoices."""
+    secret = new_number("QSX")
+    simulate(VENDOR_PHONE, "", invoice_text(secret))  # real verified vendor
+    phone = "+919866666666"
+    simulate(phone, "hi")
+    simulate(phone, "Fake, Quantum Solutions LLC")
+    assert secret not in simulate(phone, f"status of {secret}")["replies"][0]
+    assert secret not in simulate(phone, "1")["replies"][0]
+    ident_tools = simulate(phone, "how much do you owe Quantum Solutions?")["tool_calls"]
+    assert all(c["name"] != "get_vendor_balance" or c["outcome"] == "not_permitted" for c in ident_tools)
+
+
+def test_owner_verifying_new_vendor_gives_full_access():
+    phone = "+919877777777"
+    simulate(phone, "hi")
+    simulate(phone, "Arun, Arun Steels")
+    old_invoice = new_number("AS")
+    simulate(OWNER_PHONE, "x")
+    # an invoice for Arun Steels that reached the business some other way (e.g. uploaded on the website)
+    db = SessionLocal()
+    from app.services.invoice_pipeline import process_invoice_upload
+    process_invoice_upload(db, invoice_text(old_invoice, vendor="Arun Steels"), "a.txt", ORG)
+    db.close()
+    assert old_invoice not in simulate(phone, "1")["replies"][0]          # not linked yet
+
+    contact = next(c for c in client.get("/api/agent/contacts", headers=_h()).json() if c["phone_e164"] == phone)
+    assert contact["self_registered"] and contact["vendor_name"] == "Arun Steels"
+    body = {"display_name": contact["display_name"], "kind": "vendor", "vendor_name": "Arun Steels",
+            "phone": phone, "verified": True, "preferred_language": "auto"}
+    assert client.put(f"/api/agent/contacts/{contact['id']}", json=body, headers=_h()).status_code == 200
+    simulate(phone, "menu")
+    assert old_invoice in simulate(phone, "1")["replies"][0]              # now linked
+
+
+def test_removed_contact_is_not_reonboarded():
+    phone = "+919888888888"
+    simulate(phone, "hi")
+    simulate(phone, "Bala, Bala Traders")
+    contact = next(c for c in client.get("/api/agent/contacts", headers=_h()).json() if c["phone_e164"] == phone)
+    assert client.delete(f"/api/agent/contacts/{contact['id']}", headers=_h()).status_code == 204
+    out = simulate(phone, "hi")
+    assert out["status"] == "unknown_sender"

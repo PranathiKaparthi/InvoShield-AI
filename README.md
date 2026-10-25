@@ -86,6 +86,13 @@ the database, never from the model's imagination.
   (received / under review / approved / rejected / paid). Fraud scores are never shown to vendors.
 - Ask for a copy of their invoice (sent only after the owner approves).
 
+**New vendors and customers are welcomed, not turned away.** When an unknown number writes in,
+the assistant greets them, accepts any invoice they send, and asks for their name and business
+("I am Meena from Fresh Farms"). They can then use the vendor menu straight away, but only for
+invoices they sent themselves, until the owner checks and saves them in **Contacts** (which also
+links their older invoices). The owner gets a "New vendor / customer" item in Approvals. This can
+be switched off in **Settings -> Welcome new vendors and customers**.
+
 **What the owner / reviewers can do**
 - "Any suspicious invoices this week?", "Show duplicates", "How much do I owe Quantum Solutions?",
   "Daily summary".
@@ -132,7 +139,7 @@ Or run the app, log in as a reviewer and open **Assistant Inbox -> Test console*
 
 | Rule | Where |
 |---|---|
-| Every message is mapped to a known contact before any tool runs; unknown numbers get a generic reply and their invoices go to `pending_verification` | `agent/identity.py`, `agent/core.py` |
+| Every message is mapped to a contact before any tool runs; new senders are onboarded with access limited to invoices they sent (or, if switched off, get a generic reply) | `agent/identity.py`, `agent/onboarding.py` |
 | Vendors only see their own invoices; everything is tenant scoped | `agent/policies.py::scoped_invoices` |
 | Vendors don't even get the approval/balance/fraud tools | `agent/policies.py::allowed_tools` |
 | Approve / reject / mark paid need an explicit YES from the same verified reviewer, re-checked at execution | `agent/approval.py` |

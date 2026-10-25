@@ -127,6 +127,8 @@ export interface AgentContact {
   phone_e164?: string | null;
   email?: string | null;
   verified: boolean;
+  self_registered?: boolean;
+  onboarding_step?: string | null;
   preferred_language: string;
   notes?: string | null;
   created_at?: string;
@@ -161,7 +163,7 @@ export interface AgentMessage {
 
 export interface AgentApproval {
   id: number;
-  type: 'invoice_action' | 'outbound_message' | 'document_copy' | 'held_reply' | 'handoff';
+  type: 'invoice_action' | 'outbound_message' | 'document_copy' | 'held_reply' | 'handoff' | 'new_contact';
   status: string;
   summary: string;
   payload: Record<string, any>;
@@ -177,6 +179,7 @@ export interface AgentSettings {
   default_language: string;
   auto_reply: boolean;
   notify_vendors: boolean;
+  allow_new_contacts: boolean;
   channel_mode: 'mock' | 'live';
   llm: { provider: string; model?: string | null };
   whatsapp: { configured: boolean; webhook_secret_set: boolean; verify_token_set: boolean; webhook_path: string };

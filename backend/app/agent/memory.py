@@ -19,7 +19,8 @@ def get_agent_settings(db: Session, organization: str) -> AgentSettings:
     row = db.query(AgentSettings).filter(AgentSettings.organization == organization).first()
     if row is None:
         row = AgentSettings(organization=organization, business_name=settings.AGENT_BUSINESS_NAME,
-                            default_language="auto", auto_reply=True, notify_vendors=True)
+                            default_language="auto", auto_reply=True, notify_vendors=True,
+                            allow_new_contacts=True)
         db.add(row)
         db.commit()
         db.refresh(row)

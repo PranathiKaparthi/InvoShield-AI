@@ -175,7 +175,7 @@ def decide(db: Session, item: AgentApproval, user: User, approve: bool,
         db.commit()
         return item
 
-    if item.type == "handoff":
+    if item.type in ("handoff", "new_contact"):
         item.status = "resolved"
     elif item.type in ("outbound_message", "held_reply"):
         conv = _target_conversation(db, item, payload)
