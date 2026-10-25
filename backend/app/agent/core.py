@@ -104,11 +104,34 @@ def _menu_shown_recently(db: Session, conv: AgentConversation, current_inbound_i
     return any(menu.MENU_MARKER in (m.content or "") for m in recent)
 
 
+def _handle_automated(db: Session, inbound: InboundMessage, result: HandleResult) -> HandleResult:
+    """Never reply to newsletters / no-reply / bounce / auto-reply mail. Invoices that a KNOWN
+    vendor's billing system sends from a no-reply address are still saved, silently."""
+    from app.agent.identity import find_contact, normalize_address
+    result.status = "ignored"
+    address = normalize_address(inbound.channel, inbound.sender) or inbound.sender
+    contact = find_contact(db, inbound.channel, address)
+    if contact is None or not contact.verified or not inbound.media:
+        logger.info(f"Ignored automated message from {inbound.sender}")
+        return result
+    attachments, _ = _prepare_attachments(inbound)
+    for media in attachments.values():
+        process_invoice_upload(db, file_bytes=media.data, filename=media.filename,
+                               organization=contact.organization, source_contact_id=contact.id,
+                               source_channel=inbound.channel, demo_fallbacks=False,
+                               audit_actor_label=f"{contact.display_name} (automated email)")
+    result.status = "saved_silently"
+    return result
+
+
 def handle_inbound(db: Session, inbound: InboundMessage) -> HandleResult:
     result = HandleResult()
     if not settings.AGENT_ENABLED:
         result.status = "ignored"
         return result
+
+    if inbound.automated:
+        return _handle_automated(db, inbound, result)
 
     identity = resolve_identity(db, inbound.channel, inbound.sender)
     conv = get_or_create_conversation(db, identity)

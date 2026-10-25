@@ -790,3 +790,42 @@ def test_gemini_busy_model_falls_back_to_backup():
                               client=httpx.Client(transport=httpx.MockTransport(handler)))
     resp = provider.complete("sys", [{"role": "user", "content": "hi"}], [])
     assert resp.text == "Hello from backup" and asked == ["gemini-busy", "gemini-busy", "gemini-2.5-flash"]
+
+
+# ------------------------------------------------------------------ never reply to automated email
+@pytest.mark.parametrize("sender,headers", [
+    ("no-reply@bank.example", {}),
+    ("newsletter@shop.example", {}),
+    ("mailer-daemon@googlemail.com", {}),
+    ("googlecommunityteam-noreply@google.com", {}),
+    ("someone@vendor.example", {"List-Unsubscribe": "<mailto:x>"}),
+    ("someone@vendor.example", {"Auto-Submitted": "auto-replied"}),
+    ("someone@vendor.example", {"Precedence": "bulk"}),
+])
+def test_automated_email_gets_no_reply(sender, headers):
+    payload = {"from": sender, "subject": "Hello", "text": "Big sale today!", "headers": headers}
+    res = client.post("/api/agent/webhooks/email", json=payload,
+                      headers={"X-InvoShield-Email-Secret": "test-email-secret"})
+    assert res.status_code == 200
+    assert not any(m["to"] == sender for m in MOCK_OUTBOX)
+
+
+def test_real_person_email_still_gets_reply():
+    payload = {"from": "Asha <asha@newvendor.example>", "subject": "Invoice", "text": "hi"}
+    client.post("/api/agent/webhooks/email", json=payload, headers={"X-InvoShield-Email-Secret": "test-email-secret"})
+    assert any(m["to"] == "asha@newvendor.example" for m in MOCK_OUTBOX)
+
+
+def test_known_vendor_billing_system_invoice_saved_silently():
+    """Vendors' billing software often mails invoices from no-reply addresses."""
+    h = _h()
+    client.post("/api/agent/contacts", json={"display_name": "Zed Billing", "kind": "vendor", "vendor_name": "Zed Ltd",
+                                             "email": "noreply@zed.example", "verified": True,
+                                             "preferred_language": "auto"}, headers=h)
+    number = new_number("ZED")
+    payload = {"from": "noreply@zed.example", "subject": "Your invoice", "text": "",
+               "attachments": [{"filename": "z.txt", "content_type": "text/plain",
+                                "content_base64": base64.b64encode(invoice_text(number, vendor="Zed Ltd")).decode()}]}
+    client.post("/api/agent/webhooks/email", json=payload, headers={"X-InvoShield-Email-Secret": "test-email-secret"})
+    assert invoice_by_number(number) is not None
+    assert not any(m["to"] == "noreply@zed.example" for m in MOCK_OUTBOX)

@@ -100,6 +100,7 @@ class EmailWebhook(BaseModel):
     text: Optional[str] = ""
     message_id: Optional[str] = None
     attachments: List[EmailAttachment] = []
+    headers: Dict[str, str] = {}  # optional: original mail headers, used to skip automated mail
 
 
 @router.post("/webhooks/email")

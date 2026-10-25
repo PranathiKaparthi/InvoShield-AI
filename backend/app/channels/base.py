@@ -29,6 +29,8 @@ class InboundMessage:
     sender_name: Optional[str] = None
     subject: Optional[str] = None
     received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    # Newsletters, "no-reply" senders, bounces and auto-replies: never answered (see email.is_automated).
+    automated: bool = False
 
 
 @dataclass

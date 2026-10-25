@@ -193,6 +193,9 @@ The manual steps below explain what each value is and where to find it.
   Zapier/Make can do this).
 - **Inbound by IMAP**: set `EMAIL_IMAP_*` and run `python -m scripts.email_poller --every 60`.
 - **Replies**: set `EMAIL_SMTP_*` and `EMAIL_FROM_ADDRESS`.
+- **Use a separate mailbox just for invoices** (e.g. a new Gmail): the assistant reads every new email
+  in it. It never replies to newsletters, "no-reply" senders, bounces or out-of-office replies;
+  invoices that a known vendor's billing system sends from a no-reply address are still saved.
 
 ### Assistant environment variables
 

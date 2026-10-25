@@ -13,15 +13,40 @@ import base64
 import email
 import imaplib
 import logging
+import re
 import smtplib
 from email.message import EmailMessage
 from email.utils import parseaddr
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.channels.base import Channel, ChannelError, InboundMessage, MediaRef, OutboundMessage
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+_ROBOT_SENDER = re.compile(r"^(no[-_.]?reply|do[-_.]?not[-_.]?reply|donotreply|mailer[-_.]?daemon|postmaster|"
+                           r"bounces?|notifications?|alerts?|newsletter|news|marketing|info[-_.]?noreply)\b",
+                           re.IGNORECASE)
+
+
+def is_automated(sender: str, headers: Optional[Dict[str, str]] = None) -> bool:
+    """True for mail the assistant must never reply to: newsletters, no-reply senders, bounces,
+    out-of-office auto-replies and our own outgoing mail (prevents reply loops)."""
+    headers = {k.lower(): (v or "") for k, v in (headers or {}).items()}
+    local = (sender or "").split("@")[0]
+    if _ROBOT_SENDER.match(local) or re.search(r"no[-_.]?reply|do[-_.]?not[-_.]?reply", local, re.IGNORECASE):
+        return True
+    own = (settings.EMAIL_FROM_ADDRESS or "").lower()
+    if own and (sender or "").lower() == own:
+        return True
+    auto = headers.get("auto-submitted", "").strip().lower()
+    if auto and auto != "no":
+        return True
+    if headers.get("precedence", "").strip().lower() in ("bulk", "list", "junk", "auto_reply"):
+        return True
+    return any(h in headers for h in ("list-unsubscribe", "list-id", "x-autoreply", "x-autorespond",
+                                      "x-auto-response-suppress"))
 
 
 def parse_webhook(payload: Dict[str, Any]) -> InboundMessage:
@@ -34,6 +59,7 @@ def parse_webhook(payload: Dict[str, Any]) -> InboundMessage:
         text=str(payload.get("text") or ""),
         external_id=payload.get("message_id"),
     )
+    inbound.automated = is_automated(sender, payload.get("headers") or {})
     for i, att in enumerate(payload.get("attachments") or []):
         try:
             data = base64.b64decode(att.get("content_base64") or "", validate=True)
@@ -53,6 +79,7 @@ def parse_raw_email(raw: bytes) -> InboundMessage:
     sender_name, sender = parseaddr(msg.get("From", ""))
     inbound = InboundMessage(channel="email", sender=sender, sender_name=sender_name or None,
                              subject=msg.get("Subject"), external_id=msg.get("Message-ID"))
+    inbound.automated = is_automated(sender, {k: str(v) for k, v in msg.items()})
     texts: List[str] = []
     for i, part in enumerate(msg.walk()):
         if part.is_multipart():
