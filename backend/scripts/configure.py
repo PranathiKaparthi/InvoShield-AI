@@ -6,7 +6,7 @@ InvoShield setup wizard: turns the assistant from demo mode into the real thing.
     python -m scripts.configure
 
 It asks for your keys (passwords are hidden while you type), TESTS each one, generates every
-secret token itself, switches the assistant to Claude + live WhatsApp/email, creates your own
+secret token itself, switches the assistant to Gemini or Claude + live WhatsApp/email, creates your own
 owner login, disables the public demo logins, and writes backend/.env (and a copy in the project
 root for Docker). Run it again any time to change something: press Enter to keep a value.
 """
@@ -147,6 +147,51 @@ def check_anthropic(api_key: str, model: str) -> Tuple[bool, str]:
         return False, str(exc)[:300]
 
 
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+_SKIP_MODEL_WORDS = ("lite", "image", "tts", "audio", "live", "embedding", "exp", "vision", "learnlm", "gemma", "robotics")
+
+
+def gemini_models(api_key: str, client: Optional[httpx.Client] = None) -> Tuple[bool, List[str], str]:
+    """Models this key can chat with, best default first (newest stable 'flash')."""
+    client = client or httpx.Client(timeout=20)
+    try:
+        r = client.get(f"{GEMINI_BASE}/models", params={"pageSize": 200}, headers={"x-goog-api-key": api_key})
+    except httpx.HTTPError as exc:
+        return False, [], f"Could not reach Google: {exc}"
+    if r.status_code != 200:
+        try:
+            return False, [], r.json().get("error", {}).get("message", r.text)[:300]
+        except ValueError:
+            return False, [], r.text[:300]
+    names = [m["name"].replace("models/", "") for m in r.json().get("models", [])
+             if "generateContent" in (m.get("supportedGenerationMethods") or [])
+             and m.get("name", "").startswith("models/gemini")]
+
+    def score(name: str):
+        version = [float(x) for x in re.findall(r"gemini-(\d+(?:\.\d+)?)", name)] or [0.0]
+        return ("flash" in name, "preview" not in name, version[0], -len(name))
+
+    chat = [n for n in names if not any(w in n for w in _SKIP_MODEL_WORDS)]
+    chat.sort(key=score, reverse=True)
+    return True, chat, f"{len(chat)} chat models available"
+
+
+def check_gemini(api_key: str, model: str, client: Optional[httpx.Client] = None) -> Tuple[bool, str]:
+    client = client or httpx.Client(timeout=30)
+    try:
+        r = client.post(f"{GEMINI_BASE}/models/{model}:generateContent", headers={"x-goog-api-key": api_key},
+                        json={"contents": [{"role": "user", "parts": [{"text": "Reply with: ok"}]}],
+                              "generationConfig": {"maxOutputTokens": 256}})
+    except httpx.HTTPError as exc:
+        return False, f"Could not reach Google: {exc}"
+    if r.status_code != 200:
+        try:
+            return False, r.json().get("error", {}).get("message", r.text)[:300]
+        except ValueError:
+            return False, r.text[:300]
+    return True, f"Gemini answered using {model}"
+
+
 def check_whatsapp(phone_number_id: str, token: str, version: str,
                    client: Optional[httpx.Client] = None) -> Tuple[bool, str]:
     client = client or httpx.Client(timeout=20)
@@ -244,22 +289,54 @@ def main() -> None:
         up["DATABASE_URL"] = "sqlite:///./invoshield.db"
 
     # ---------------------------------------------------------------- Claude
-    section("2. Claude (the assistant's brain)")
-    print("Get a key at https://console.anthropic.com -> API Keys (add a little credit under Billing).")
-    model = cur.get("AGENT_MODEL") or DEFAULT_MODEL
-    key = cur.get("ANTHROPIC_API_KEY", "")
-    while True:
-        key = ask("Anthropic API key (starts with sk-ant-)", key or None, secret=True, required=True)
-        model = ask("Model", model)
-        good, msg = check_anthropic(key, model)
-        if good:
-            ok(msg)
-            break
-        bad(msg)
-        if not yes("Try again?"):
-            print(f"{YELLOW}  Saved anyway; the assistant will hand chats to your team until the key works.{END}")
-            break
-    up.update({"ANTHROPIC_API_KEY": key, "AGENT_MODEL": model, "AGENT_LLM_PROVIDER": "anthropic"})
+    section("2. The assistant's brain (AI)")
+    print("  1. Google Gemini  (key from https://aistudio.google.com/app/apikey)")
+    print("  2. Claude by Anthropic  (key from https://console.anthropic.com -> API Keys)")
+    current = "2" if (cur.get("AGENT_LLM_PROVIDER") == "anthropic" and cur.get("ANTHROPIC_API_KEY")) else "1"
+    choice = ask("Which one? 1 or 2", current)
+    if choice.strip() == "2":
+        model = cur.get("AGENT_MODEL") or DEFAULT_MODEL
+        key = cur.get("ANTHROPIC_API_KEY", "")
+        while True:
+            key = ask("Anthropic API key (starts with sk-ant-)", key or None, secret=True, required=True)
+            model = ask("Model", model)
+            good, msg = check_anthropic(key, model)
+            if good:
+                ok(msg)
+                break
+            bad(msg)
+            if not yes("Try again?"):
+                print(f"{YELLOW}  Saved anyway; the assistant will hand chats to your team until the key works.{END}")
+                break
+        up.update({"ANTHROPIC_API_KEY": key, "AGENT_MODEL": model, "AGENT_LLM_PROVIDER": "anthropic"})
+    else:
+        print("Note: on Google's free tier, Google may use what is sent to Gemini (your vendors' messages and\n"
+              "invoice details) to improve its products. Turn on billing for the key's project to avoid that.")
+        key = cur.get("GOOGLE_API_KEY", "")
+        model = cur.get("GEMINI_MODEL", "")
+        while True:
+            key = ask("Google API key (starts with AIza)", key or None, secret=True, required=True)
+            listed, models, msg = gemini_models(key)
+            if not listed:
+                bad(msg)
+                if "API has not been used" in msg or "disabled" in msg:
+                    print("  Enable the 'Generative Language API' for this key's project, or create the key\n"
+                          "  at https://aistudio.google.com/app/apikey (it is enabled there automatically).")
+                if yes("Try again?"):
+                    continue
+                break
+            if models:
+                print("  Available: " + ", ".join(models[:6]) + (" ..." if len(models) > 6 else ""))
+            model = ask("Model", model if model in models else (models[0] if models else "gemini-2.5-flash"))
+            good, msg = check_gemini(key, model)
+            if good:
+                ok(msg)
+                break
+            bad(msg)
+            if not yes("Try again?"):
+                print(f"{YELLOW}  Saved anyway; the assistant will hand chats to your team until the key works.{END}")
+                break
+        up.update({"GOOGLE_API_KEY": key, "GEMINI_MODEL": model, "AGENT_LLM_PROVIDER": "gemini"})
 
     # ---------------------------------------------------------------- WhatsApp
     section("3. WhatsApp (Meta WhatsApp Business Cloud API)")

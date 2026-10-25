@@ -158,7 +158,8 @@ cd backend
 python -m scripts.configure
 ```
 
-It asks for your Anthropic API key, WhatsApp details and (optionally) email, **tests each one**,
+It lets you choose **Google Gemini** (key from https://aistudio.google.com/app/apikey) or **Claude**
+(key from https://console.anthropic.com), asks for your WhatsApp details and (optionally) email, **tests each one**,
 generates all secret tokens, switches the assistant to Claude + live channels, creates your own
 owner login, disables the public demo logins (`APP_ENV=production`), and prints the exact webhook
 URL and verify token to paste into Meta. Run it again any time; press Enter to keep a value.
@@ -197,6 +198,8 @@ The manual steps below explain what each value is and where to find it.
 
 | Variable | Purpose |
 |---|---|
+| `AGENT_LLM_PROVIDER` | `gemini` or `anthropic` |
+| `GOOGLE_API_KEY`, `GEMINI_MODEL` | Google Gemini key and model (the wizard picks the newest stable "flash" model) |
 | `ANTHROPIC_API_KEY`, `AGENT_MODEL` | Claude API key and model (default `claude-sonnet-5-5`) |
 | `AGENT_CHANNEL_MODE` | `mock` (record only, default) or `live` |
 | `AGENT_BUSINESS_NAME`, `AGENT_DEFAULT_ORGANIZATION`, `AGENT_TIMEZONE` | Business identity |

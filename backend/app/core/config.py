@@ -71,9 +71,13 @@ class Settings(BaseSettings):
     AGENT_ENABLED: bool = True
     # "anthropic" uses the Claude API with native tool use; "offline" is a deterministic
     # English-only fallback used for demos/tests when no API key is configured.
+    # "anthropic" (Claude) or "gemini" (Google). "offline" is a basic English-only fallback.
     AGENT_LLM_PROVIDER: str = "anthropic"
     ANTHROPIC_API_KEY: Optional[str] = None
     AGENT_MODEL: str = "claude-sonnet-5-5"
+    # Google Gemini: key from https://aistudio.google.com/app/apikey
+    GOOGLE_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     AGENT_MAX_TOKENS: int = 1024
     AGENT_MAX_TOOL_ROUNDS: int = 6
     AGENT_HISTORY_TURNS: int = 12

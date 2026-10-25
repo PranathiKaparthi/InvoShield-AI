@@ -666,17 +666,18 @@ const SettingsTab: React.FC = () => {
         </p>
         <div className="divide-y divide-gray-100">
           <StatusRow label="Channel mode" ok={s.channel_mode === 'live'} okText="live" offText="mock" />
-          <StatusRow label="Language model" ok={s.llm.provider === 'anthropic'} detail={s.llm.model || undefined}
-            okText="Claude" offText="offline demo" />
+          <StatusRow label="Language model" ok={s.llm.provider === 'anthropic' || s.llm.provider === 'gemini'}
+            detail={s.llm.model || undefined}
+            okText={s.llm.provider === 'gemini' ? 'Google Gemini' : 'Claude'} offText="offline demo" />
           <StatusRow label="WhatsApp sending" ok={s.whatsapp.configured} />
           <StatusRow label="WhatsApp webhook secret" ok={s.whatsapp.webhook_secret_set} detail={s.whatsapp.webhook_path} />
           <StatusRow label="Email sending (SMTP)" ok={s.email.configured} />
           <StatusRow label="Email inbound" ok={s.email.webhook_secret_set || s.email.imap_configured} detail={s.email.webhook_path} />
         </div>
-        {s.llm.provider !== 'anthropic' && (
+        {s.llm.provider === 'offline' && (
           <p className="mt-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-2">
-            Claude isn't connected yet, so replies come from a basic English-only fallback. Run the setup wizard
-            above and enter your Anthropic API key for natural replies in English, Tamil, Telugu and Hindi.
+            No AI is connected yet, so replies come from a basic English-only fallback. Run the setup wizard above
+            and enter a Google Gemini or Anthropic Claude API key for natural replies in English, Tamil, Telugu and Hindi.
           </p>
         )}
         <details className="mt-3">

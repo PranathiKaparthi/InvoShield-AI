@@ -727,3 +727,49 @@ def test_removed_contact_is_not_reonboarded():
     assert client.delete(f"/api/agent/contacts/{contact['id']}", headers=_h()).status_code == 204
     out = simulate(phone, "hi")
     assert out["status"] == "unknown_sender"
+
+
+# ------------------------------------------------------------------ Google Gemini provider
+def _gemini_mock(seen):
+    """Fake Gemini API: first asks for list_my_invoices, then answers from the tool result."""
+    def handler(request: httpx.Request):
+        body = json.loads(request.content)
+        seen.append(body)
+        assert request.headers["x-goog-api-key"] == "AIza-test"
+        assert request.url.path.endswith("/models/gemini-test:generateContent")
+        last = body["contents"][-1]["parts"]
+        if any("functionResponse" in p for p in last):
+            fr = next(p["functionResponse"] for p in last if "functionResponse" in p)
+            assert fr["name"] == "list_my_invoices" and "invoices" in fr["response"]
+            return httpx.Response(200, json={"candidates": [{"content": {"role": "model", "parts": [
+                {"text": "உங்களிடம் பில்கள் உள்ளன."}]}}]})
+        return httpx.Response(200, json={"candidates": [{"content": {"role": "model", "parts": [
+            {"functionCall": {"name": "list_my_invoices", "args": {"status": "all"}},
+             "thoughtSignature": "sig-123"}]}}]})
+    return handler
+
+
+def test_gemini_provider_runs_tools_through_the_agent():
+    from app.agent.llm import GeminiProvider
+    seen = []
+    llm.set_provider(GeminiProvider("AIza-test", "gemini-test", 1024,
+                                    client=httpx.Client(transport=httpx.MockTransport(_gemini_mock(seen)))))
+    out = simulate(VENDOR_PHONE, "என் பில் நிலை என்ன?")
+    assert out["tool_calls"][0]["name"] == "list_my_invoices"
+    assert out["replies"][0] == "உங்களிடம் பில்கள் உள்ளன."
+    first, second = seen
+    assert "untrusted_content" in first["systemInstruction"]["parts"][0]["text"]   # injection rules sent
+    decls = first["tools"][0]["functionDeclarations"]
+    assert {d["name"] for d in decls} >= {"list_my_invoices", "get_invoice_status"}
+    assert "request_invoice_action" not in {d["name"] for d in decls}           # vendor tool limits apply
+    assert all("additionalProperties" not in json.dumps(d) for d in decls)       # Gemini-safe schemas
+    assert second["contents"][-2]["parts"][0]["thoughtSignature"] == "sig-123"   # replayed as Gemini expects
+
+
+def test_gemini_errors_hand_off_to_team():
+    from app.agent.llm import GeminiProvider
+    def handler(request):
+        return httpx.Response(400, json={"error": {"message": "API key not valid."}})
+    llm.set_provider(GeminiProvider("AIza-bad", "gemini-test", 1024,
+                                    client=httpx.Client(transport=httpx.MockTransport(handler))))
+    assert "passed this to the team" in simulate(VENDOR_PHONE, "status?")["replies"][0]

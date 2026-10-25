@@ -32,3 +32,19 @@ def test_whatsapp_check_reports_success_and_meta_errors():
 
     good, msg = check_whatsapp("123", "bad", "v21.0", httpx.Client(transport=httpx.MockTransport(bad_handler)))
     assert not good and "Invalid OAuth" in msg
+
+
+def test_gemini_model_listing_prefers_newest_stable_flash():
+    from scripts.configure import gemini_models
+
+    def handler(request):
+        return httpx.Response(200, json={"models": [
+            {"name": "models/gemini-2.0-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-2.5-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-3-flash-preview", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]},
+        ]})
+    good, models, _ = gemini_models("AIza", httpx.Client(transport=httpx.MockTransport(handler)))
+    assert good and models[0] == "gemini-2.5-flash" and "gemini-2.5-flash-lite" not in models

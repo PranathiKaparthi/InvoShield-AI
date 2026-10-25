@@ -82,6 +82,115 @@ class AnthropicProvider(LLMProvider):
                            stop_reason=resp.stop_reason or "end_turn")
 
 
+# ------------------------------------------------------------------------------ Google Gemini
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
+_GEMINI_TYPES = {"object": "OBJECT", "string": "STRING", "number": "NUMBER", "integer": "INTEGER",
+                 "boolean": "BOOLEAN", "array": "ARRAY"}
+
+
+def gemini_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert our JSON schema to the subset Gemini accepts (it rejects e.g. additionalProperties).
+    Our own validator still enforces the full schema before any tool runs."""
+    out: Dict[str, Any] = {}
+    if "type" in schema:
+        out["type"] = _GEMINI_TYPES.get(schema["type"], schema["type"].upper())
+    for key in ("description", "enum", "required", "minimum", "maximum"):
+        if key in schema:
+            out[key] = schema[key]
+    if "properties" in schema:
+        out["properties"] = {k: gemini_schema(v) for k, v in schema["properties"].items()}
+    if "items" in schema:
+        out["items"] = gemini_schema(schema["items"])
+    return out
+
+
+def to_gemini_contents(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    names: Dict[str, str] = {}
+    contents = []
+    for m in messages:
+        role = "model" if m["role"] == "assistant" else "user"
+        content = m["content"]
+        parts: List[Dict[str, Any]] = []
+        if isinstance(content, str):
+            parts = [{"text": content}] if content else []
+        else:
+            for b in content:
+                kind = b.get("type")
+                if "gemini_part" in b:  # replay Gemini's own part (keeps any thought signature)
+                    parts.append(b["gemini_part"])
+                    if kind == "tool_use":
+                        names[b["id"]] = b["name"]
+                elif kind == "text" and b.get("text"):
+                    parts.append({"text": b["text"]})
+                elif kind == "tool_use":
+                    names[b["id"]] = b["name"]
+                    parts.append({"functionCall": {"name": b["name"], "args": b.get("input") or {}}})
+                elif kind == "tool_result":
+                    try:
+                        data = json.loads(b.get("content") or "{}")
+                    except (TypeError, ValueError):
+                        data = {"result": b.get("content")}
+                    if not isinstance(data, dict):
+                        data = {"result": data}
+                    parts.append({"functionResponse": {"name": names.get(b.get("tool_use_id"), "tool"),
+                                                       "response": data}})
+        if parts:
+            contents.append({"role": role, "parts": parts})
+    return contents
+
+
+class GeminiProvider(LLMProvider):
+    """Google Gemini (generateContent REST API) with function calling."""
+    name = "gemini"
+
+    def __init__(self, api_key: str, model: str, max_tokens: int, client=None):
+        import httpx
+        self.api_key = api_key
+        self.model = model.replace("models/", "")
+        # Newer Gemini models spend part of the output budget on internal reasoning.
+        self.max_tokens = max(max_tokens, 4096)
+        self.client = client or httpx.Client(timeout=60.0)
+
+    def complete(self, system, messages, tools) -> LLMResponse:
+        body: Dict[str, Any] = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": to_gemini_contents(messages),
+            "generationConfig": {"maxOutputTokens": self.max_tokens, "temperature": 0.3},
+        }
+        if tools:
+            body["tools"] = [{"functionDeclarations": [
+                {"name": t["name"], "description": t.get("description", ""),
+                 "parameters": gemini_schema(t["input_schema"])} for t in tools]}]
+        resp = self.client.post(f"{GEMINI_BASE}/models/{self.model}:generateContent", json=body,
+                                headers={"x-goog-api-key": self.api_key})
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("error", {}).get("message", resp.text)
+            except ValueError:
+                detail = resp.text
+            raise RuntimeError(f"Gemini API error {resp.status_code}: {detail[:300]}")
+        data = resp.json()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise RuntimeError(f"Gemini returned no answer: {json.dumps(data.get('promptFeedback', {}))[:200]}")
+        texts, calls, content = [], [], []
+        for part in (candidates[0].get("content") or {}).get("parts", []) or []:
+            if part.get("thought"):
+                continue
+            if "functionCall" in part:
+                fc = part["functionCall"]
+                call = ToolCall(id=fc.get("id") or f"gem_{uuid.uuid4().hex[:10]}", name=fc.get("name", ""),
+                                input=dict(fc.get("args") or {}))
+                calls.append(call)
+                content.append({"type": "tool_use", "id": call.id, "name": call.name, "input": call.input,
+                                "gemini_part": part})
+            elif part.get("text"):
+                texts.append(part["text"])
+                content.append({"type": "text", "text": part["text"], "gemini_part": part})
+        return LLMResponse(text="\n".join(texts).strip(), tool_calls=calls, assistant_content=content,
+                           stop_reason="tool_use" if calls else "end_turn")
+
+
 # ------------------------------------------------------------------------------ Scripted
 class ScriptedProvider(LLMProvider):
     """Test helper: each call pops the next response (or calls a function with the messages)."""
@@ -457,11 +566,14 @@ def get_provider() -> LLMProvider:
         return _override
     if _cached is None:
         choice = (settings.AGENT_LLM_PROVIDER or "anthropic").lower()
-        if choice == "anthropic" and settings.ANTHROPIC_API_KEY:
+        if choice == "gemini" and settings.GOOGLE_API_KEY:
+            _cached = GeminiProvider(settings.GOOGLE_API_KEY, settings.GEMINI_MODEL, settings.AGENT_MAX_TOKENS)
+        elif choice == "anthropic" and settings.ANTHROPIC_API_KEY:
             _cached = AnthropicProvider(settings.ANTHROPIC_API_KEY, settings.AGENT_MODEL, settings.AGENT_MAX_TOKENS)
         else:
-            if choice == "anthropic":
-                logger.warning("ANTHROPIC_API_KEY not set: InvoShield Assistant is using the offline (English-only) provider.")
+            if choice in ("anthropic", "gemini"):
+                logger.warning(f"No API key for '{choice}': InvoShield Assistant is using the offline "
+                               "(English-only) provider.")
             _cached = OfflineProvider()
     return _cached
 
