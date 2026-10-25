@@ -659,7 +659,11 @@ const SettingsTab: React.FC = () => {
 
       <div className="bg-white border border-gray-200 rounded-lg p-4">
         <p className="text-sm font-semibold text-gray-900 mb-1">Connections</p>
-        <p className="text-[11px] text-gray-500 mb-2">Configured on the server through .env (see README).</p>
+        <p className="text-[11px] text-gray-500 mb-2">
+          To connect Claude, WhatsApp and email, run the setup wizard in the backend folder:{' '}
+          <code className="font-mono text-gray-700 bg-gray-50 border border-gray-200 rounded px-1">python -m scripts.configure</code>
+          , then restart the backend.
+        </p>
         <div className="divide-y divide-gray-100">
           <StatusRow label="Channel mode" ok={s.channel_mode === 'live'} okText="live" offText="mock" />
           <StatusRow label="Language model" ok={s.llm.provider === 'anthropic'} detail={s.llm.model || undefined}
@@ -671,8 +675,8 @@ const SettingsTab: React.FC = () => {
         </div>
         {s.llm.provider !== 'anthropic' && (
           <p className="mt-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-2">
-            No ANTHROPIC_API_KEY is set, so the assistant uses a simple offline brain that only understands English.
-            Add a key for Tamil, Telugu, Hindi and natural conversation.
+            Claude isn't connected yet, so replies come from a basic English-only fallback. Run the setup wizard
+            above and enter your Anthropic API key for natural replies in English, Tamil, Telugu and Hindi.
           </p>
         )}
         <details className="mt-3">

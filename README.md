@@ -150,6 +150,20 @@ Or run the app, log in as a reviewer and open **Assistant Inbox -> Test console*
 | Every tool call and outbound message is in the audit log | `agent/tools.py`, `agent/delivery.py` |
 | WhatsApp 24-hour rule: outside the window only templates are sent; the full message is delivered when the vendor replies | `agent/delivery.py` |
 
+### Going live: the setup wizard (recommended)
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1          # Mac/Linux: source venv/bin/activate
+python -m scripts.configure
+```
+
+It asks for your Anthropic API key, WhatsApp details and (optionally) email, **tests each one**,
+generates all secret tokens, switches the assistant to Claude + live channels, creates your own
+owner login, disables the public demo logins (`APP_ENV=production`), and prints the exact webhook
+URL and verify token to paste into Meta. Run it again any time; press Enter to keep a value.
+The manual steps below explain what each value is and where to find it.
+
 ### Connecting WhatsApp (Meta WhatsApp Business Cloud API)
 
 1. Create an app at <https://developers.facebook.com> (type **Business**) and add the **WhatsApp** product.
